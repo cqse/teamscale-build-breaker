@@ -9,3 +9,38 @@ buildNumber.properties
 .mvn/timing.properties
 # https://github.com/takari/maven-wrapper#usage-without-binary-jar
 .mvn/wrapper/maven-wrapper.jar
+
+# General
+*.o
+*.lo
+*.la
+*.bak
+\#*#
+.*.rej
+*.rej
+*.orig
+.*~
+*~
+.#*
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+dev_jco_rfc.trc
+/build/
+/*/build/
+/*/*/build/
+.gradle
+
+# Not shared IntelliJ files
+.idea/
+out
+*.eml
+*.iml
+*.ipr
+*.iws
+
+# Not shared Eclipse files
+.metadata/
