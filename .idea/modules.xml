@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/ThresholdEvaluation.iml" filepath="$PROJECT_DIR$/.idea/ThresholdEvaluation.iml" />
+      <module fileurl="file://$PROJECT_DIR$/buildbreaker.iml" filepath="$PROJECT_DIR$/buildbreaker.iml" />
     </modules>
   </component>
 </project>
