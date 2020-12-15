@@ -3,11 +3,12 @@ package com.cqse.teamscalefeedback;
 import com.cqse.teamscalefeedback.autodetect_revision.EnvironmentVariableChecker;
 import com.cqse.teamscalefeedback.autodetect_revision.GitChecker;
 import com.cqse.teamscalefeedback.autodetect_revision.SvnChecker;
+import com.cqse.teamscalefeedback.exceptions.CommitCouldNotBeResolvedException;
+import com.cqse.teamscalefeedback.exceptions.KeystoreException;
 import com.cqse.teamscalefeedback.exceptions.SslConnectionFailureException;
 import com.cqse.teamscalefeedback.exceptions.TeamscaleFeedbackInternalException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
+import com.teamscale.client.model.CommitDescriptor;
 import com.teamscale.client.model.MetricAssessment;
 import okhttp3.Credentials;
 import okhttp3.HttpUrl;
@@ -19,30 +20,21 @@ import org.conqat.lib.commons.string.StringUtils;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.IExecutionExceptionHandler;
+import picocli.CommandLine.IExitCodeExceptionMapper;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParameterException;
 import picocli.CommandLine.ParseResult;
 import picocli.CommandLine.Spec;
 
-import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLHandshakeException;
-import javax.net.ssl.SSLSession;
-import javax.net.ssl.SSLSocketFactory;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
 import java.io.IOException;
 import java.net.ConnectException;
-import java.net.URL;
-import java.net.URLEncoder;
 import java.net.UnknownHostException;
-import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
-import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.Objects;
 import java.util.concurrent.Callable;
 
 @Command(name = "teamscale-feedback", mixinStandardHelpOptions = true, version = "teamscale-feedback 0.1",
@@ -56,9 +48,7 @@ import java.util.concurrent.Callable;
                 " commit on a branch via --branch-and-timestamp my-branch:HEAD.")
 public class TeamscaleFeedback implements Callable<Integer> {
 
-    private final OkHttpClient httpClient;
-
-    // Injected by PicoCli
+    /** The command spec models how this executable can be called. It is automatically injected by PicoCli. */
     @Spec
     CommandSpec spec;
 
@@ -91,6 +81,7 @@ public class TeamscaleFeedback implements Callable<Integer> {
 
     private String keyStorePath;
     private String keyStorePassword;
+    private OkHttpClient client;
 
     @Option(names = {"-s", "--server"}, paramLabel = "<teamscale-server-url>", required = true, description = "The URL under which the Teamscale server can be reached.")
     public void setTeamscaleServerUrl(String teamscaleServerUrl) {
@@ -162,32 +153,33 @@ public class TeamscaleFeedback implements Callable<Integer> {
         this.commit = commitRevision;
     }
 
+    public static void main(String... args) {
+        // Just let PicoCLI handle everything. Main entry point for PicoCLI is the "call()" method.
+        int exitCode = new CommandLine(new TeamscaleFeedback())
+                .setExecutionExceptionHandler(new PrintExceptionMessageHandler())
+                .setExitCodeExceptionMapper(new ExceptionToExitCodeMapper())
+                .execute(args);
+        System.exit(exitCode);
+    }
+
     @Override
     public Integer call() throws Exception {
-        OkHttpClient client = OkHttpClientUtils.createClient(!disableSslValidation, keyStorePath, keyStorePassword);
+        client = OkHttpClientUtils.createClient(!disableSslValidation, keyStorePath, keyStorePassword);
         try {
-
             HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
                     .addPathSegments("api/projects")
                     .addPathSegment(project)
                     .addPathSegments("metric-assessments")
                     .addQueryParameter("uniform-path", "")
                     .addQueryParameter("configuration-name", thresholdConfig);
-            if (!StringUtils.isEmpty(branchAndTimestamp)) {
-                builder.addQueryParameter("t", branchAndTimestamp);
-            }
+            addRevisionOrBranchTimestamp(builder);
             HttpUrl url = builder.build();
 
-            Request request = new Request.Builder()
-                    .header("Authorization", Credentials.basic(user, accessKey))
-                    .url(url)
-                    .get()
-                    .build();
+            Request request = createAuthenticatedGetRequest(url);
 
-            String json = sendRequest(client, url, request);
-            // String someString = JsonPath.read(json, "$");
-            MetricAssessment[] metricAssessments = new Gson().fromJson(json, MetricAssessment[].class);
-            System.out.println(metricAssessments);
+            MetricAssessment[] metricAssessments = sendRequest(url, request, MetricAssessment[].class);
+            EvaluationResult metricResult = new MetricsEvaluator().evaluate(metricAssessments);
+            System.out.println(metricResult);
             return 0;
         } catch (SSLHandshakeException e) {
             handleSslConnectionFailure(e);
@@ -200,154 +192,79 @@ public class TeamscaleFeedback implements Callable<Integer> {
         }
     }
 
-    public static void main(String... args) {
-        // Just let PicoCLI handle everything
-        int exitCode = new CommandLine(new TeamscaleFeedback()).setExecutionExceptionHandler(new PrintExceptionMessageHandler()).execute(args);
-        System.exit(exitCode);
+    private <T> T sendRequest(HttpUrl url, Request request, Class<T> clazz) throws IOException {
+        try (Response response = client.newCall(request).execute()) {
+            handleErrors(response);
+            return new Gson().fromJson(readBodySafe(response), clazz);
+        } catch (UnknownHostException e) {
+            fail("The host " + url + " could not be resolved. Please ensure you have no typo and that" +
+                    " this host is reachable from this server. " + e.getMessage());
+        } catch (ConnectException e) {
+            fail("The URL " + url + " refused a connection. Please ensure that you have no typo and that" +
+                    " this endpoint is reachable and not blocked by firewalls. " + e.getMessage());
+        }
+        // Never reached
+        return null;
     }
 
-    public TeamscaleFeedback() {
-        OkHttpClient.Builder builder = new OkHttpClient.Builder();
-        setUpSslValidation(builder);
-        httpClient = builder.build();
-    }
-
-    private static void setUpSslValidation(OkHttpClient.Builder builder) {
-        SSLSocketFactory sslSocketFactory;
-        try {
-            SSLContext sslContext = SSLContext.getInstance("TLS");
-            sslContext.init(null, new TrustManager[]{TrustAllCertificatesManager.INSTANCE}, new SecureRandom());
-            sslSocketFactory = sslContext.getSocketFactory();
-        } catch (GeneralSecurityException e) {
-            System.err.println("Could not disable SSL certificate validation. Leaving it enabled (" + e + ")");
-            return;
-        }
-
-        // this causes OkHttp to accept all certificates
-        builder.sslSocketFactory(sslSocketFactory, TrustAllCertificatesManager.INSTANCE);
-        // this causes it to ignore invalid host names in the certificates
-        builder.hostnameVerifier((String hostName, SSLSession session) -> true);
-    }
-
-    /**
-     * A simple implementation of {@link X509TrustManager} that simple trusts every certificate.
-     */
-    public static class TrustAllCertificatesManager implements X509TrustManager {
-
-        /** Singleton instance. */
-        /*package*/ static final TrustAllCertificatesManager INSTANCE = new TrustAllCertificatesManager();
-
-        /** Returns <code>null</code>. */
-        @Override
-        public X509Certificate[] getAcceptedIssuers() {
-            return new X509Certificate[0];
-        }
-
-        /** Does nothing. */
-        @Override
-        public void checkServerTrusted(X509Certificate[] certs, String authType) {
-            // Nothing to do
-        }
-
-        /** Does nothing. */
-        @Override
-        public void checkClientTrusted(X509Certificate[] certs, String authType) {
-            // Nothing to do
-        }
-
-    }
-
-    private int evaluateResponse(boolean failOnYellow, String unparsedResponse) throws IOException {
-        int exitCode = 0;
-
-        ObjectMapper objectMapper = new ObjectMapper();
-        JsonNode response = objectMapper.readTree(unparsedResponse);
-
-        if (response.size() == 0) {
-            System.out.println("WARNING: The data is unavailable. No metrics and thresholds were evaluated.");
-            exitCode = 2;
-        }
-        for (JsonNode group : response) {
-            String groupRating = group.get("rating").asText();
-            if (groupRating.equals("RED") || (failOnYellow && groupRating.equals("YELLOW"))) {
-                exitCode = 3;
-                System.out.println("Violation in group " + group.get("name") + ":");
-                JsonNode metrics = group.get("metrics");
-                for (JsonNode metric : metrics) {
-                    String metricRating = metric.get("rating").asText();
-                    if (metricRating.equals("RED")) {
-                        System.out.println(metricRating + " " + metric.get("displayName").asText() + ": red-threshold-value "
-                                + metric.get("metricThresholds").get("thresholdRed").asDouble() + ", current-value "
-                                + metric.get("formattedTextValue"));
-                    } else if (failOnYellow && metricRating.equals("YELLOW")) {
-                        System.out.println(metricRating + " " + metric.get("displayName").asText() + ": yellow-threshold-value "
-                                + metric.get("metricThresholds").get("thresholdYellow").asDouble() + ", current-value "
-                                + metric.get("formattedTextValue"));
-                    }
-                }
-            }
-        }
-        if (exitCode == 0) {
-            System.out.println("All metrics passed the evaluation.");
-        }
-        return exitCode;
+    private Request createAuthenticatedGetRequest(HttpUrl url) {
+        return new Request.Builder()
+                .header("Authorization", Credentials.basic(user, accessKey))
+                .url(url)
+                .get()
+                .build();
     }
 
     /**
      * Adds either a revision or t parameter to the given builder, based on the input.
      * <p>
      * We track revision or branch:timestamp for the session as it should be the same for all uploads.
-     *
-     * @return the revision or branch:timestamp coordinate used.
      */
-    private String handleRevisionAndBranchTimestamp(HttpUrl.Builder builder) {
+    private void addRevisionOrBranchTimestamp(HttpUrl.Builder builder) throws IOException {
         if (!StringUtils.isEmpty(commit)) {
-            builder.addQueryParameter("revision", commit);
-            return commit;
+            builder.addQueryParameter("t", fetchTimestampForRevision(commit));
         } else if (!StringUtils.isEmpty(branchAndTimestamp)) {
             builder.addQueryParameter("t", branchAndTimestamp);
-            return branchAndTimestamp;
         } else {
             // auto-detect if neither option is given
             String commit = detectCommit();
             if (commit == null) {
                 throw new ParameterException(spec.commandLine(), "Failed to automatically detect the commit. Please specify it manually via --commit or --branch-and-timestamp");
             }
-            builder.addQueryParameter("revision", commit);
-            return commit;
+            builder.addQueryParameter("t", fetchTimestampForRevision(commit));
         }
     }
 
-    private String sendGet(String cookie, URL baseUrl, String project, String branch, String thresholdConfig) throws IOException {
-
-        String responseBody = "";
-
-        String url = baseUrl + "api/projects/" + URLEncoder.encode(project, StandardCharsets.UTF_8.toString())
-                + "/metric-assessments/?uniform-path=&configuration-name="
-                + URLEncoder.encode(thresholdConfig, StandardCharsets.UTF_8.toString());
-
-        if (!branch.equals("")) {
-            url += "&t=" + URLEncoder.encode(branch, StandardCharsets.UTF_8.toString()) + "%3AHEAD";
+    private String fetchTimestampForRevision(String revision) throws IOException {
+        HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
+                .addPathSegments("api/projects")
+                .addPathSegment(project)
+                .addPathSegments("revision")
+                .addPathSegment(revision)
+                .addPathSegments("commits");
+        HttpUrl url = builder.build();
+        Request request = createAuthenticatedGetRequest(url);
+        CommitDescriptor[] commitDescriptors = sendRequest(url, request, CommitDescriptor[].class);
+        if (commitDescriptors.length == 0) {
+            throw new CommitCouldNotBeResolvedException("Could not resolve revision " + this.commit + " to a valid commit known to Teamscale (no commits returned)");
         }
-
-        String json = sendRequest(httpClient, HttpUrl.parse(url), new Request.Builder().build());
-        // String someString = JsonPath.read(json, "$");
-        MetricAssessment metricAssessment = new Gson().fromJson(json, MetricAssessment.class);
-
-        Request request = new Request.Builder().url(url).addHeader("Cookie", cookie).build();
-
-        try (Response response = httpClient.newCall(request).execute()) {
-
-            if (!response.isSuccessful()) {
-                throw new IOException("Unexpected code " + response);
-            }
-
-            responseBody = response.body().string();
-        } catch (Exception e) {
-            System.out.println(e);
-            System.exit(1);
+        if (commitDescriptors.length > 1) {
+            throw new CommitCouldNotBeResolvedException("Could not resolve revision " + this.commit + " to a valid commit known to Teamscale (too many commits returned): " + StringUtils.concat(commitDescriptors, ", "));
         }
-        return responseBody;
+        return toServiceCallFormat(commitDescriptors[0]);
+    }
+
+    public String toServiceCallFormat(CommitDescriptor commitDescriptor) {
+        String branchName = commitDescriptor.getBranchName();
+        Long timestamp = commitDescriptor.getTimestamp();
+        String result = branchName + ":";
+        if ("##no-branch##".contentEquals(Objects.requireNonNull(branchName))) {
+            result = StringUtils.EMPTY_STRING;
+        }
+        if (Objects.requireNonNull(timestamp) == Long.MAX_VALUE) {
+            return result + "HEAD";
+        }
+        return result + timestamp;
     }
 
     private static final String command = "native-image -cp /Users/j.muller/.m2/repository/com/squareup/okhttp3/okhttp/3.14.2/okhttp-3.14.2.jar:/Users/j.muller/.m2/repository/com/squareup/okio/okio/1.17.2/okio-1.17.2.jar:/Users/j.muller/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.9.8/jackson-databind-2.9.8.jar:/Users/j.muller/.m2/repository/com/fasterxml/jackson/core/jackson-annotations/2.9.0/jackson-annotations-2.9.0.jar:/Users/j.muller/.m2/repository/com/fasterxml/jackson/core/jackson-core/2.9.8/jackson-core-2.9.8.jar:/Users/j.muller/Desktop/CQSE.nosync/Work/git_repo/MavenProject/okta-graalvm-example/jdk/target/okta-graal-example-jdk-1.0-SNAPSHOT.jar -H:Class=com.okta.examples.jdk.OkHttpExample -H:Name=thresholdEvaluation -H:+AddAllCharsets --no-fallback --enable-http --enable-https";
@@ -441,22 +358,6 @@ public class TeamscaleFeedback implements Callable<Integer> {
         return SvnChecker.findRevision();
     }
 
-    private String sendRequest(OkHttpClient client, HttpUrl url, Request request) throws IOException {
-        try (Response response = client.newCall(request).execute()) {
-            handleErrors(response);
-            System.out.println("Successful");
-            return readBodySafe(response);
-        } catch (UnknownHostException e) {
-            fail("The host " + url + " could not be resolved. Please ensure you have no typo and that" +
-                    " this host is reachable from this server. " + e.getMessage());
-        } catch (ConnectException e) {
-            fail("The URL " + url + " refused a connection. Please ensure that you have no typo and that" +
-                    " this endpoint is reachable and not blocked by firewalls. " + e.getMessage());
-        }
-
-        return null;
-    }
-
     private void handleErrors(Response response) {
         if (response.isRedirect()) {
             String location = response.header("Location");
@@ -548,5 +449,19 @@ class PrintExceptionMessageHandler implements IExecutionExceptionHandler {
         return cmd.getExitCodeExceptionMapper() != null
                 ? cmd.getExitCodeExceptionMapper().getExitCode(ex)
                 : cmd.getCommandSpec().exitCodeOnExecutionException();
+    }
+}
+
+class ExceptionToExitCodeMapper implements IExitCodeExceptionMapper {
+    @Override
+    public int getExitCode(Throwable t) {
+        if (t instanceof SslConnectionFailureException) {
+            return -1;
+        } else if (t instanceof KeystoreException) {
+            return -2;
+        } else if (t instanceof TeamscaleFeedbackInternalException) {
+            return -3;
+        }
+        return -4;
     }
 }
