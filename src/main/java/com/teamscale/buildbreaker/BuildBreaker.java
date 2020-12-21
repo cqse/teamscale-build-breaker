@@ -36,7 +36,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 
-@Command(name = "teamscale-feedback", mixinStandardHelpOptions = true, version = "teamscale-feedback 0.1",
+@Command(name = "teamscale-buildbreaker", mixinStandardHelpOptions = true, version = "teamscale-buildbreaker 0.1",
         description = "Queries a Teamscale server for analysis results and emits a corresponding status code.",
         footer = "\nBy default, teamscale-feedback tries to automatically detect the code commit" +
                 " for which to obtain feedback from environment variables or a Git or SVN checkout in the" +
