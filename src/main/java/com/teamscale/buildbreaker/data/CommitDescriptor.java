@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.cqse.buildbreaker.data;
+package com.teamscale.buildbreaker.data;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;

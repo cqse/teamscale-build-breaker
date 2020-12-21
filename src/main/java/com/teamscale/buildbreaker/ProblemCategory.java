@@ -1,4 +1,4 @@
-package com.cqse.buildbreaker;
+package com.teamscale.buildbreaker;
 
 public enum ProblemCategory {
     INFO, WARNING, ERROR, CRITICAL;

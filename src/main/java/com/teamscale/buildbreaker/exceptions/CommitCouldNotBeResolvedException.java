@@ -1,4 +1,4 @@
-package com.cqse.buildbreaker.exceptions;
+package com.teamscale.buildbreaker.exceptions;
 
 public class CommitCouldNotBeResolvedException extends RuntimeException {
     public CommitCouldNotBeResolvedException(String s) {

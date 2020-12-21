@@ -1,9 +1,9 @@
-package com.cqse.buildbreaker;
+package com.teamscale.buildbreaker;
 
 import org.conqat.lib.commons.collections.SetMap;
 
-import static com.cqse.buildbreaker.ProblemCategory.ERROR;
-import static com.cqse.buildbreaker.ProblemCategory.WARNING;
+import static com.teamscale.buildbreaker.ProblemCategory.ERROR;
+import static com.teamscale.buildbreaker.ProblemCategory.WARNING;
 
 public class EvaluationResult {
 

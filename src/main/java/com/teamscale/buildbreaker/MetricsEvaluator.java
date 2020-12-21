@@ -1,4 +1,4 @@
-package com.cqse.buildbreaker;
+package com.teamscale.buildbreaker;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

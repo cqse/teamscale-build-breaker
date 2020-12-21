@@ -1,14 +1,14 @@
-package com.cqse.buildbreaker;
+package com.teamscale.buildbreaker;
 
-import com.cqse.buildbreaker.autodetect_revision.EnvironmentVariableChecker;
-import com.cqse.buildbreaker.autodetect_revision.GitChecker;
-import com.cqse.buildbreaker.autodetect_revision.SvnChecker;
-import com.cqse.buildbreaker.data.CommitDescriptor;
-import com.cqse.buildbreaker.exceptions.CommitCouldNotBeResolvedException;
-import com.cqse.buildbreaker.exceptions.KeystoreException;
-import com.cqse.buildbreaker.exceptions.SslConnectionFailureException;
-import com.cqse.buildbreaker.exceptions.TeamscaleFeedbackInternalException;
 import com.google.gson.Gson;
+import com.teamscale.buildbreaker.autodetect_revision.EnvironmentVariableChecker;
+import com.teamscale.buildbreaker.autodetect_revision.GitChecker;
+import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
+import com.teamscale.buildbreaker.data.CommitDescriptor;
+import com.teamscale.buildbreaker.exceptions.CommitCouldNotBeResolvedException;
+import com.teamscale.buildbreaker.exceptions.KeystoreException;
+import com.teamscale.buildbreaker.exceptions.SslConnectionFailureException;
+import com.teamscale.buildbreaker.exceptions.TeamscaleFeedbackInternalException;
 import okhttp3.Credentials;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
@@ -45,7 +45,7 @@ import java.util.concurrent.Callable;
                 " If automatic detection fails, you can manually specify either a commit via --commit," +
                 " a branch and timestamp via --branch-and-timestamp or you can upload to the latest" +
                 " commit on a branch via --branch-and-timestamp my-branch:HEAD.")
-public class TeamscaleFeedback implements Callable<Integer> {
+public class BuildBreaker implements Callable<Integer> {
 
     /** The command spec models how this executable can be called. It is automatically injected by PicoCli. */
     @Spec
@@ -154,7 +154,7 @@ public class TeamscaleFeedback implements Callable<Integer> {
 
     public static void main(String... args) {
         // Just let PicoCLI handle everything. Main entry point for PicoCLI is the "call()" method.
-        int exitCode = new CommandLine(new TeamscaleFeedback())
+        int exitCode = new CommandLine(new BuildBreaker())
                 .setExecutionExceptionHandler(new PrintExceptionMessageHandler())
                 .setExitCodeExceptionMapper(new ExceptionToExitCodeMapper())
                 .execute(args);
