@@ -1,4 +1,4 @@
-package com.cqse.teamscalefeedback;
+package com.cqse.buildbreaker;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

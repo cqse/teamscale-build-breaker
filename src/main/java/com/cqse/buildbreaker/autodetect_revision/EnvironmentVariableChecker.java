@@ -1,4 +1,4 @@
-package com.cqse.teamscalefeedback.autodetect_revision;
+package com.cqse.buildbreaker.autodetect_revision;
 
 import java.util.Arrays;
 import java.util.List;

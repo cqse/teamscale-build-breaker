@@ -1,13 +1,13 @@
-package com.cqse.teamscalefeedback;
+package com.cqse.buildbreaker;
 
-import com.cqse.teamscalefeedback.autodetect_revision.EnvironmentVariableChecker;
-import com.cqse.teamscalefeedback.autodetect_revision.GitChecker;
-import com.cqse.teamscalefeedback.autodetect_revision.SvnChecker;
-import com.cqse.teamscalefeedback.data.CommitDescriptor;
-import com.cqse.teamscalefeedback.exceptions.CommitCouldNotBeResolvedException;
-import com.cqse.teamscalefeedback.exceptions.KeystoreException;
-import com.cqse.teamscalefeedback.exceptions.SslConnectionFailureException;
-import com.cqse.teamscalefeedback.exceptions.TeamscaleFeedbackInternalException;
+import com.cqse.buildbreaker.autodetect_revision.EnvironmentVariableChecker;
+import com.cqse.buildbreaker.autodetect_revision.GitChecker;
+import com.cqse.buildbreaker.autodetect_revision.SvnChecker;
+import com.cqse.buildbreaker.data.CommitDescriptor;
+import com.cqse.buildbreaker.exceptions.CommitCouldNotBeResolvedException;
+import com.cqse.buildbreaker.exceptions.KeystoreException;
+import com.cqse.buildbreaker.exceptions.SslConnectionFailureException;
+import com.cqse.buildbreaker.exceptions.TeamscaleFeedbackInternalException;
 import com.google.gson.Gson;
 import okhttp3.Credentials;
 import okhttp3.HttpUrl;

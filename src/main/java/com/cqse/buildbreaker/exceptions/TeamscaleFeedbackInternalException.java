@@ -1,4 +1,4 @@
-package com.cqse.teamscalefeedback.exceptions;
+package com.cqse.buildbreaker.exceptions;
 
 public class TeamscaleFeedbackInternalException extends IllegalStateException {
     public TeamscaleFeedbackInternalException(String s, Throwable e) {

@@ -1,7 +1,7 @@
-package com.cqse.teamscalefeedback;
+package com.cqse.buildbreaker;
 
-import com.cqse.teamscalefeedback.exceptions.KeystoreException;
-import com.cqse.teamscalefeedback.exceptions.TeamscaleFeedbackInternalException;
+import com.cqse.buildbreaker.exceptions.KeystoreException;
+import com.cqse.buildbreaker.exceptions.TeamscaleFeedbackInternalException;
 import okhttp3.OkHttpClient;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
