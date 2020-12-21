@@ -3,13 +3,12 @@ package com.cqse.teamscalefeedback;
 import com.cqse.teamscalefeedback.autodetect_revision.EnvironmentVariableChecker;
 import com.cqse.teamscalefeedback.autodetect_revision.GitChecker;
 import com.cqse.teamscalefeedback.autodetect_revision.SvnChecker;
+import com.cqse.teamscalefeedback.data.CommitDescriptor;
 import com.cqse.teamscalefeedback.exceptions.CommitCouldNotBeResolvedException;
 import com.cqse.teamscalefeedback.exceptions.KeystoreException;
 import com.cqse.teamscalefeedback.exceptions.SslConnectionFailureException;
 import com.cqse.teamscalefeedback.exceptions.TeamscaleFeedbackInternalException;
 import com.google.gson.Gson;
-import com.teamscale.client.model.CommitDescriptor;
-import com.teamscale.client.model.MetricAssessment;
 import okhttp3.Credentials;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
@@ -166,18 +165,7 @@ public class TeamscaleFeedback implements Callable<Integer> {
     public Integer call() throws Exception {
         client = OkHttpClientUtils.createClient(!disableSslValidation, keyStorePath, keyStorePassword);
         try {
-            HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
-                    .addPathSegments("api/projects")
-                    .addPathSegment(project)
-                    .addPathSegments("metric-assessments")
-                    .addQueryParameter("uniform-path", "")
-                    .addQueryParameter("configuration-name", thresholdConfig);
-            addRevisionOrBranchTimestamp(builder);
-            HttpUrl url = builder.build();
-
-            Request request = createAuthenticatedGetRequest(url);
-
-            MetricAssessment[] metricAssessments = sendRequest(url, request, MetricAssessment[].class);
+            String metricAssessments = fetchMetricAssessments();
             EvaluationResult metricResult = new MetricsEvaluator().evaluate(metricAssessments);
             System.out.println(metricResult);
             return 0;
@@ -192,10 +180,25 @@ public class TeamscaleFeedback implements Callable<Integer> {
         }
     }
 
-    private <T> T sendRequest(HttpUrl url, Request request, Class<T> clazz) throws IOException {
+    private String fetchMetricAssessments() throws IOException {
+        HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
+                .addPathSegments("api/projects")
+                .addPathSegment(project)
+                .addPathSegments("metric-assessments")
+                .addQueryParameter("uniform-path", "")
+                .addQueryParameter("configuration-name", thresholdConfig);
+        addRevisionOrBranchTimestamp(builder);
+        HttpUrl url = builder.build();
+
+        Request request = createAuthenticatedGetRequest(url);
+
+        return sendRequest(url, request);
+    }
+
+    private String sendRequest(HttpUrl url, Request request) throws IOException {
         try (Response response = client.newCall(request).execute()) {
             handleErrors(response);
-            return new Gson().fromJson(readBodySafe(response), clazz);
+            return readBodySafe(response);
         } catch (UnknownHostException e) {
             fail("The host " + url + " could not be resolved. Please ensure you have no typo and that" +
                     " this host is reachable from this server. " + e.getMessage());
@@ -244,9 +247,10 @@ public class TeamscaleFeedback implements Callable<Integer> {
                 .addPathSegments("commits");
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
-        CommitDescriptor[] commitDescriptors = sendRequest(url, request, CommitDescriptor[].class);
+        String commitDescriptorsJson = sendRequest(url, request);
+        CommitDescriptor[] commitDescriptors = new Gson().fromJson(commitDescriptorsJson, CommitDescriptor[].class);
         if (commitDescriptors.length == 0) {
-            throw new CommitCouldNotBeResolvedException("Could not resolve revision " + this.commit + " to a valid commit known to Teamscale (no commits returned)");
+            throw new CommitCouldNotBeResolvedException("Could not resolve revision " + commit + " to a valid commit known to Teamscale (no commits returned)");
         }
         if (commitDescriptors.length > 1) {
             throw new CommitCouldNotBeResolvedException("Could not resolve revision " + this.commit + " to a valid commit known to Teamscale (too many commits returned): " + StringUtils.concat(commitDescriptors, ", "));
@@ -440,11 +444,7 @@ class PrintExceptionMessageHandler implements IExecutionExceptionHandler {
                                         CommandLine cmd,
                                         ParseResult parseResult) {
         // bold red error message
-        cmd.getErr().println(cmd.getColorScheme().errorText(ex.getMessage()));
-
-        if (ex instanceof TeamscaleFeedbackInternalException) {
-            cmd.getErr().println(cmd.getColorScheme().stackTraceText(ex));
-        }
+        cmd.getErr().println(cmd.getColorScheme().stackTraceText(ex));
 
         return cmd.getExitCodeExceptionMapper() != null
                 ? cmd.getExitCodeExceptionMapper().getExitCode(ex)
@@ -456,12 +456,14 @@ class ExceptionToExitCodeMapper implements IExitCodeExceptionMapper {
     @Override
     public int getExitCode(Throwable t) {
         if (t instanceof SslConnectionFailureException) {
-            return -1;
-        } else if (t instanceof KeystoreException) {
             return -2;
-        } else if (t instanceof TeamscaleFeedbackInternalException) {
+        } else if (t instanceof KeystoreException) {
             return -3;
+        } else if (t instanceof TeamscaleFeedbackInternalException) {
+            return -4;
+        } else if (t instanceof CommitCouldNotBeResolvedException) {
+            return -5;
         }
-        return -4;
+        return -1;
     }
 }

@@ -2,13 +2,27 @@ package com.cqse.teamscalefeedback;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.teamscale.client.model.MetricAssessment;
+import com.jayway.jsonpath.DocumentContext;
+import com.jayway.jsonpath.JsonPath;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Map;
 
 public class MetricsEvaluator {
-    public EvaluationResult evaluate(MetricAssessment[] metricAssessments) {
-        return new EvaluationResult();
+    public EvaluationResult evaluate(String metricAssessmentsJson) {
+        EvaluationResult evaluationResult = new EvaluationResult();
+        DocumentContext metricAssessments = JsonPath.parse(metricAssessmentsJson);
+        List<Map<String, Object>> metricViolations = metricAssessments.read("$..metrics[?(@.rating =~ /(YELLOW|RED)/)]");
+        for (Map<String, Object> metricViolation : metricViolations) {
+            Map<String, String> metricThresholds = (Map<String, String>) metricViolation.get("metricThresholds");
+            String message = String.format("%s: \n\tThresholds (yellow/red): %s/%s\n\tActual value: %s", metricViolation.get("displayName"),
+                    metricThresholds.get("thresholdYellow"),
+                    metricThresholds.get("thresholdRed"),
+                    metricViolation.get("formattedTextValue"));
+            evaluationResult.addViolation(ProblemCategory.fromRatingString((String) metricViolation.get("rating")), message);
+        }
+        return evaluationResult;
     }
 
     private int evaluateResponse(boolean failOnYellow, String unparsedResponse) throws IOException {
