@@ -1,21 +1,13 @@
-package com.teamscale.buildbreaker;
+package com.teamscale.buildbreaker.evaluation;
 
 import org.conqat.lib.commons.collections.SetMap;
 
-import static com.teamscale.buildbreaker.ProblemCategory.ERROR;
-import static com.teamscale.buildbreaker.ProblemCategory.WARNING;
+import static com.teamscale.buildbreaker.evaluation.ProblemCategory.ERROR;
+import static com.teamscale.buildbreaker.evaluation.ProblemCategory.WARNING;
 
 public class EvaluationResult {
 
     private final SetMap<ProblemCategory, String> problemsByCategory = new SetMap<>();
-
-    public void addWarning(String warningMessage) {
-        problemsByCategory.add(WARNING, warningMessage);
-    }
-
-    public void addError(String errorMessage) {
-        problemsByCategory.add(ERROR, errorMessage);
-    }
 
     public void addViolation(ProblemCategory problemCategory, String violationMessage) {
         problemsByCategory.add(problemCategory, violationMessage);

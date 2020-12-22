@@ -34,7 +34,7 @@ public class OkHttpClientUtils {
      * @param trustStorePath     May be null if no trust store should be used.
      * @param trustStorePassword May be null if no trust store should be used.
      */
-    public static OkHttpClient createClient(boolean validateSsl, String trustStorePath, String trustStorePassword) {
+    public static OkHttpClient createClient(boolean disableSslValidation, String trustStorePath, String trustStorePassword) {
         OkHttpClient.Builder builder = new OkHttpClient.Builder();
 
         setSensibleTimeouts(builder);
@@ -43,7 +43,7 @@ public class OkHttpClientUtils {
         if (trustStorePath != null) {
             configureTrustStore(builder, trustStorePath, trustStorePassword);
         }
-        if (!validateSsl) {
+        if (disableSslValidation) {
             disableSslValidation(builder);
         }
 
