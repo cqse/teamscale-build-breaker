@@ -36,14 +36,15 @@ import java.time.format.DateTimeFormatter;
 import java.util.concurrent.Callable;
 
 @Command(name = "teamscale-buildbreaker", mixinStandardHelpOptions = true, version = "teamscale-buildbreaker 0.1",
-        description = "Queries a Teamscale server for analysis results, wvaluates them and emits a corresponding status code.",
-        footer = "\nBy default, teamscale-feedback tries to automatically detect the code commit" +
+        description = "Queries a Teamscale server for analysis results, evaluates them and emits a corresponding status code.",
+        footer = "\nBy default, this tries to automatically detect the code commit" +
                 " for which to obtain feedback from environment variables or a Git or SVN checkout in the" +
                 " current working directory. This feature" +
                 " supports many common CI tools like Jenkins, GitLab, GitHub Actions, Travis CI etc." +
-                " If automatic detection fails, you can manually specify either a commit via --commit," +
-                " a branch and timestamp via --branch-and-timestamp or you can upload to the latest" +
-                " commit on a branch via --branch-and-timestamp my-branch:HEAD.")
+                " If automatic detection fails, you can manually specify either a commit via --commit, or" +
+                " a branch and timestamp via --branch-and-timestamp.\nIntroduction of new findings can only be evaluated when" +
+                " a specific commit is given, but threshold evaluation can also be performed on the current version of a branch by using" +
+                " --branch-and-timestamp my-branch:HEAD.")
 public class BuildBreaker implements Callable<Integer> {
 
     /** The command spec models how this executable can be called. It is automatically injected by PicoCli. */
@@ -111,7 +112,7 @@ public class BuildBreaker implements Callable<Integer> {
         @Option(names = {"-b", "--branch-and-timestamp"}, paramLabel = "<branch:timestamp>", description = "The branch and Unix Epoch timestamp for which analysis results should be evaluated." +
                 " This is typically the branch and commit timestamp of the commit that the current CI pipeline" +
                 " is building. The timestamp must be milliseconds since" +
-                " 00:00:00 UTC Thursday, 1 January 1970 or the string 'HEAD' to upload to" +
+                " 00:00:00 UTC Thursday, 1 January 1970 or the string 'HEAD' to evaluate thresholds on" +
                 " the latest revision on that branch." +
                 "\nFormat: BRANCH:TIMESTAMP" +
                 "\nExample: master:1597845930000" +
@@ -197,7 +198,7 @@ public class BuildBreaker implements Callable<Integer> {
 
     private class SslConnectionOptions {
         @Option(names = "--disable-ssl-validation", description = "By default, SSL certificates are validated against the configured KeyStore." +
-                " This flag disables validation which makes using this tool with self-signed certificates easier.", defaultValue = "false")
+                " This flag disables validation which makes using this tool with self-signed certificates easier.")
         private boolean disableSslValidation;
 
         private String keyStorePath;
@@ -232,18 +233,7 @@ public class BuildBreaker implements Callable<Integer> {
 
     @Override
     public Integer call() throws Exception {
-        if (sslConnectionOptions == null) {
-            sslConnectionOptions = new SslConnectionOptions();
-        }
-        if (commitOptions == null) {
-            commitOptions = new CommitOptions();
-        }
-        if (findingEvalOptions == null) {
-            findingEvalOptions = new FindingEvalOptions();
-        }
-        if (thresholdEvalOptions == null) {
-            thresholdEvalOptions = new ThresholdEvalOptions();
-        }
+        initDefaultOptions();
         client = OkHttpClientUtils.createClient(sslConnectionOptions.disableSslValidation, sslConnectionOptions.keyStorePath, sslConnectionOptions.keyStorePassword);
         EvaluationResult aggregatedResult = new EvaluationResult();
 
@@ -256,7 +246,7 @@ public class BuildBreaker implements Callable<Integer> {
             }
 
             if (findingEvalOptions.evaluateFindings) {
-                String findingAssessments = fetchFindingAssessments();
+                String findingAssessments = fetchFindings();
                 EvaluationResult findingsResult = new FindingsEvaluator().evaluate(findingAssessments, findingEvalOptions.failOnYellowFindings, findingEvalOptions.failOnModified);
                 aggregatedResult.addAll(findingsResult);
                 System.out.println(findingsResult);
@@ -273,7 +263,19 @@ public class BuildBreaker implements Callable<Integer> {
         }
     }
 
-    private String fetchFindingAssessments() throws IOException {
+    private void initDefaultOptions() {
+        if (sslConnectionOptions == null) {
+            sslConnectionOptions = new SslConnectionOptions();
+        }
+        if (findingEvalOptions == null) {
+            findingEvalOptions = new FindingEvalOptions();
+        }
+        if (thresholdEvalOptions == null) {
+            thresholdEvalOptions = new ThresholdEvalOptions();
+        }
+    }
+
+    private String fetchFindings() throws IOException {
         HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
                 .addPathSegments("api/projects")
                 .addPathSegment(project)
@@ -281,9 +283,7 @@ public class BuildBreaker implements Callable<Integer> {
                 .addPathSegments("list");
         addRevisionOrBranchTimestamp(builder);
         HttpUrl url = builder.build();
-
         Request request = createAuthenticatedGetRequest(url);
-
         return sendRequest(url, request);
     }
 
@@ -296,9 +296,7 @@ public class BuildBreaker implements Callable<Integer> {
                 .addQueryParameter("configuration-name", thresholdEvalOptions.thresholdConfig);
         addRevisionOrBranchTimestamp(builder);
         HttpUrl url = builder.build();
-
         Request request = createAuthenticatedGetRequest(url);
-
         return sendRequest(url, request);
     }
 

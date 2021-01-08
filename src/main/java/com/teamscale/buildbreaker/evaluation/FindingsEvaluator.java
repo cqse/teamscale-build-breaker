@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/** Evaluates a finding JSON string (corresponds to Teamscale type FindingChurnList). */
 public class FindingsEvaluator {
 
     public EvaluationResult evaluate(String findingsJson, boolean failOnYellowFindings, boolean includeChangedCode) {

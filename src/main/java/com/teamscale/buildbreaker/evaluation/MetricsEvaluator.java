@@ -6,6 +6,7 @@ import com.jayway.jsonpath.JsonPath;
 import java.util.List;
 import java.util.Map;
 
+/** Evaluates a metric assessment JSON string (corresponds to Teamscale type List<GroupAssessment>). */
 public class MetricsEvaluator {
 
     public EvaluationResult evaluate(String metricAssessmentsJson, boolean failOnYellow) {

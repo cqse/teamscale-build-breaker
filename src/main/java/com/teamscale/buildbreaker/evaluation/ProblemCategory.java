@@ -1,7 +1,8 @@
 package com.teamscale.buildbreaker.evaluation;
 
+/** The categories in which problems are divided. */
 public enum ProblemCategory {
-    INFO, WARNING, ERROR, CRITICAL;
+    WARNING, ERROR;
 
     public static ProblemCategory fromRatingString(String rating) {
         switch (rating) {
