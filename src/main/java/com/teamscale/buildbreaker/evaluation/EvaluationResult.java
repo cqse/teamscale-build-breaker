@@ -36,11 +36,25 @@ public class EvaluationResult {
         return sb.toString().trim();
     }
 
+    public void addAll(EvaluationResult other) {
+        problemsByCategory.addAll(other.problemsByCategory);
+    }
+
     private boolean hasWarnings() {
         return problemsByCategory.containsCollection(WARNING);
     }
 
     private boolean hasErrors() {
         return problemsByCategory.containsCollection(ERROR);
+    }
+
+    public int toStatusCode() {
+        if (hasErrors()) {
+            return 1;
+        }
+        if (hasWarnings()) {
+            return 2;
+        }
+        return 0;
     }
 }

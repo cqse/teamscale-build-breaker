@@ -6,6 +6,7 @@ import com.teamscale.buildbreaker.autodetect_revision.GitChecker;
 import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
 import com.teamscale.buildbreaker.data.CommitDescriptor;
 import com.teamscale.buildbreaker.evaluation.EvaluationResult;
+import com.teamscale.buildbreaker.evaluation.FindingsEvaluator;
 import com.teamscale.buildbreaker.evaluation.MetricsEvaluator;
 import com.teamscale.buildbreaker.exceptions.CommitCouldNotBeResolvedException;
 import com.teamscale.buildbreaker.exceptions.ExceptionToExitCodeMapper;
@@ -47,7 +48,7 @@ public class BuildBreaker implements Callable<Integer> {
 
     /** The command spec models how this executable can be called. It is automatically injected by PicoCli. */
     @Spec
-    CommandSpec spec;
+    static CommandSpec spec;
 
     /** The base URL of the Teamscale server */
     private HttpUrl teamscaleServerUrl;
@@ -60,36 +61,36 @@ public class BuildBreaker implements Callable<Integer> {
     @ArgGroup(exclusive = false)
     private ThresholdEvalOptions thresholdEvalOptions;
 
-    static class ThresholdEvalOptions {
+    public static class ThresholdEvalOptions {
         /** Whether to evaluate thresholds */
         @Option(names = {"-t", "--evaluate-thresholds"}, required = true, description = "If this option is set, metrics from a given threshold profile will be evaluated.")
-        private boolean evaluateThresholds;
+        public boolean evaluateThresholds;
 
         /** The threshold config to use */
         @Option(names = {"-o", "--threshold-config"}, required = true, description = "The name of the threshold config that should be used.")
-        private String thresholdConfig;
+        public String thresholdConfig;
 
         /** Whether to fail on yellow metrics */
         @Option(names = {"--fail-on-yellow-metrics"}, description = "Whether to fail on yellow metrics.")
-        private boolean failOnYellowMetrics;
+        public boolean failOnYellowMetrics;
     }
 
     /** Whether to evaluate findings, and detail options for that evaluation */
     @ArgGroup(exclusive = false)
     private FindingEvalOptions findingEvalOptions;
 
-    private static class FindingEvalOptions {
+    public static class FindingEvalOptions {
         /** Whether to evaluate findings */
         @Option(names = {"-f", "--evaluate-findings"}, required = true, description = "If this option is set, findings introduced with the given commit will be evaluated.")
-        private boolean evaluateFindings;
+        public boolean evaluateFindings;
 
         /** Whether to fail on yellow findings */
         @Option(names = {"--fail-on-yellow-findings"}, description = "Whether to fail on yellow findings.")
-        private boolean failOnYellowFindings;
+        public boolean failOnYellowFindings;
 
         /** Whether to fail on findings in modified code */
         @Option(names = {"--fail-on-modified-code-findings"}, description = "Fail on findings in modified code (not just findings in new code).")
-        private boolean failOnModified;
+        public boolean failOnModified;
     }
 
     /** The username of the Teamscale user performing the query */
@@ -102,7 +103,7 @@ public class BuildBreaker implements Callable<Integer> {
     @ArgGroup(exclusive = true, multiplicity = "1")
     private CommitOptions commitOptions;
 
-    private class CommitOptions {
+    private static class CommitOptions {
 
         /** The branch and timestamp info for the queried commit. May be <code>null</code>. */
         private String branchAndTimestamp;
@@ -196,7 +197,7 @@ public class BuildBreaker implements Callable<Integer> {
 
     private class SslConnectionOptions {
         @Option(names = "--disable-ssl-validation", description = "By default, SSL certificates are validated against the configured KeyStore." +
-                " This flag disables validation which makes using this tool with self-signed certificates easier.")
+                " This flag disables validation which makes using this tool with self-signed certificates easier.", defaultValue = "false")
         private boolean disableSslValidation;
 
         private String keyStorePath;
@@ -231,13 +232,36 @@ public class BuildBreaker implements Callable<Integer> {
 
     @Override
     public Integer call() throws Exception {
+        if (sslConnectionOptions == null) {
+            sslConnectionOptions = new SslConnectionOptions();
+        }
+        if (commitOptions == null) {
+            commitOptions = new CommitOptions();
+        }
+        if (findingEvalOptions == null) {
+            findingEvalOptions = new FindingEvalOptions();
+        }
+        if (thresholdEvalOptions == null) {
+            thresholdEvalOptions = new ThresholdEvalOptions();
+        }
         client = OkHttpClientUtils.createClient(sslConnectionOptions.disableSslValidation, sslConnectionOptions.keyStorePath, sslConnectionOptions.keyStorePassword);
-        try {
-            String metricAssessments = fetchMetricAssessments();
-            EvaluationResult metricResult = new MetricsEvaluator().evaluate(metricAssessments);
-            System.out.println(metricResult);
+        EvaluationResult aggregatedResult = new EvaluationResult();
 
-            return 0;
+        try {
+            if (thresholdEvalOptions.evaluateThresholds) {
+                String metricAssessments = fetchMetricAssessments();
+                EvaluationResult metricResult = new MetricsEvaluator().evaluate(metricAssessments, thresholdEvalOptions.failOnYellowMetrics);
+                aggregatedResult.addAll(metricResult);
+                System.out.println(metricResult);
+            }
+
+            if (findingEvalOptions.evaluateFindings) {
+                String findingAssessments = fetchFindingAssessments();
+                EvaluationResult findingsResult = new FindingsEvaluator().evaluate(findingAssessments, findingEvalOptions.failOnYellowFindings, findingEvalOptions.failOnModified);
+                aggregatedResult.addAll(findingsResult);
+                System.out.println(findingsResult);
+            }
+            return aggregatedResult.toStatusCode();
         } catch (SSLHandshakeException e) {
             handleSslConnectionFailure(e);
             return -1;
@@ -247,6 +271,20 @@ public class BuildBreaker implements Callable<Integer> {
             client.dispatcher().executorService().shutdownNow();
             client.connectionPool().evictAll();
         }
+    }
+
+    private String fetchFindingAssessments() throws IOException {
+        HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
+                .addPathSegments("api/projects")
+                .addPathSegment(project)
+                .addPathSegments("finding-churn")
+                .addPathSegments("list");
+        addRevisionOrBranchTimestamp(builder);
+        HttpUrl url = builder.build();
+
+        Request request = createAuthenticatedGetRequest(url);
+
+        return sendRequest(url, request);
     }
 
     private String fetchMetricAssessments() throws IOException {
