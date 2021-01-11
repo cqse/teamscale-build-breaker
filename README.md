@@ -90,39 +90,23 @@ Print version information and exit.
 
 Running the native image only with --help/--version returns the help message/version of the native image.
 
-## Project Usage
+## Building the Native Image
 
 **Prerequisites**
 
-- install graalvm (https://www.graalvm.org/getting-started/)
-- install native-image extension of graalvm
-- install maven (https://maven.apache.org/install.html)
+- Install graalvm (https://www.graalvm.org/getting-started/)
+- Install native-image extension of graalvm
+- Install maven (https://maven.apache.org/install.html)
 
-**Configure your toolchain.xml**
+**Configure `pom.xml`**
 
-- if you don't have a toolchain.xml yet, create the file at ~/.m2
-- add the following code to your toolchain.xml, exchanging < path-to-java-graalvm-jdk > with the actual path:
+In the `properties` section of the `pom.xml` of this project, you can adapt the setting
+```<graalvm.version>20.3.0</graalvm.version>``` to the version installed on your system. Other changes should not be
+necessary.
 
-```
-<?xml version="1.0" encoding="UTF8"?>
-<toolchains>
-  <toolchain>
-    <type>jdk</type>
-    <provides>
-        <version>1.8</version>
-        <graalVmVersion>20.1.0</graalVmVersion>
-    </provides>
-    <configuration>
-        <jdkHome><path-to-java-graalvm-jdk></jdkHome>
-    </configuration>
-  </toolchain>
-</toolchains>
-```
+**Build Native Image**
 
-**Build native-image**
-
-- make your changes
-  to ```~/ThresholdEvaluation/thresholdevaluation/src/main/java/com.teamscale.thresholdevaluation/ThresholdEvaluation.java```
-- open the terminal/command prompt and navigate to ```~/ThresholdEvaluation/thresholdevaluation/```
-- run ```mvn package```
-- if build was successful, the new native image is located at ```~/ThresholdEvaluation/thresholdevaluation/target```
+- Make sure that maven is executed with the graalvm JDK
+- In the command line, navigate to the root directory of the project
+- Run ```mvn package```
+- if build was successful, the new native image is located in the ```target``` subfolder of the project

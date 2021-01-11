@@ -194,7 +194,6 @@
                         <argument>--outdir=${project.build.directory}/generated-picocli-docs</argument>
                         <argument>--template-dir=src/docs/mantemplates</argument>
                         <argument>${mainClass}</argument>
-                        <!-- <argument>com.your.package.YourCommand2</argument>-->
                     </arguments>
                 </configuration>
                 <dependencies>
