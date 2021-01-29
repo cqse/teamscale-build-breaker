@@ -1,6 +1,8 @@
 package com.teamscale.buildbreaker;
 
 import com.google.gson.Gson;
+import com.jayway.jsonpath.DocumentContext;
+import com.jayway.jsonpath.JsonPath;
 import com.teamscale.buildbreaker.autodetect_revision.EnvironmentVariableChecker;
 import com.teamscale.buildbreaker.autodetect_revision.GitChecker;
 import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
@@ -8,6 +10,7 @@ import com.teamscale.buildbreaker.data.CommitDescriptor;
 import com.teamscale.buildbreaker.evaluation.EvaluationResult;
 import com.teamscale.buildbreaker.evaluation.FindingsEvaluator;
 import com.teamscale.buildbreaker.evaluation.MetricsEvaluator;
+import com.teamscale.buildbreaker.exceptions.AnalysisNotFinishedException;
 import com.teamscale.buildbreaker.exceptions.CommitCouldNotBeResolvedException;
 import com.teamscale.buildbreaker.exceptions.ExceptionToExitCodeMapper;
 import com.teamscale.buildbreaker.exceptions.PrintExceptionMessageHandler;
@@ -30,7 +33,9 @@ import javax.net.ssl.SSLHandshakeException;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.UnknownHostException;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.Callable;
@@ -193,6 +198,10 @@ public class BuildBreaker implements Callable<Integer> {
         this.accessKey = accessKey;
     }
 
+    /** Whether to evaluate thresholds */
+    @Option(names = {"--wait-for-analysis-timeout"}, paramLabel = "<minutes-to-wait>", required = false, description = "The minutes this tool will wait for analysis of the given commit to be finished in Teamscale. This is useful when Teamscale starts analyzing at the same time this tool is called, and analysis is not yet finished. Default value is twenty minutes.")
+    public int waitForAnalysisTimeoutMinutes = 20;
+
     @ArgGroup(exclusive = true)
     private SslConnectionOptions sslConnectionOptions;
 
@@ -238,6 +247,13 @@ public class BuildBreaker implements Callable<Integer> {
         EvaluationResult aggregatedResult = new EvaluationResult();
 
         try {
+            LocalDateTime timeout = LocalDateTime.now().plusMinutes(waitForAnalysisTimeoutMinutes);
+            while (!isTeamscaleAnalysisFinished() && LocalDateTime.now().isBefore(timeout)) {
+                Thread.sleep(Duration.ofSeconds(10).toMillis());
+            }
+            if (!isTeamscaleAnalysisFinished()) {
+                throw new AnalysisNotFinishedException("The commit that should be evaluated was not analyzed by Teamscale in time before the analysis timeout. You can change this timeout using --wait-for-analysis-timeout.");
+            }
             if (thresholdEvalOptions.evaluateThresholds) {
                 String metricAssessments = fetchMetricAssessments();
                 EvaluationResult metricResult = new MetricsEvaluator().evaluate(metricAssessments, thresholdEvalOptions.failOnYellowMetrics);
@@ -261,6 +277,32 @@ public class BuildBreaker implements Callable<Integer> {
             client.dispatcher().executorService().shutdownNow();
             client.connectionPool().evictAll();
         }
+    }
+
+    private boolean isTeamscaleAnalysisFinished() throws IOException {
+        try {
+            String branchAndTimestampString = determineBranchAndTimestamp();
+            String[] branchAndTimestamp = branchAndTimestampString.split(":", 2);
+            String branch = branchAndTimestamp[0];
+            long timestamp = Long.parseLong(branchAndTimestamp[1]);
+            return isAnalysisFinished(branch, timestamp);
+        } catch (CommitCouldNotBeResolvedException e) {
+            return false;
+        }
+    }
+
+    private boolean isAnalysisFinished(String branch, long timestamp) throws IOException {
+        HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
+                .addPathSegments("api/projects")
+                .addPathSegment(project)
+                .addPathSegments("branch-analysis-state")
+                .addPathSegments(branch);
+        HttpUrl url = builder.build();
+        Request request = createAuthenticatedGetRequest(url);
+        String analysisStateJson = sendRequest(url, request);
+        DocumentContext analysisState = JsonPath.parse(analysisStateJson);
+        Long lastFinishedTimestamp = analysisState.read("$.timestamp");
+        return lastFinishedTimestamp >= timestamp;
     }
 
     private void initDefaultOptions() {
@@ -329,17 +371,22 @@ public class BuildBreaker implements Callable<Integer> {
      * We track revision or branch:timestamp for the session as it should be the same for all uploads.
      */
     private void addRevisionOrBranchTimestamp(HttpUrl.Builder builder) throws IOException {
+        builder.addQueryParameter("t", determineBranchAndTimestamp());
+    }
+
+    private String determineBranchAndTimestamp() throws IOException {
         if (!StringUtils.isEmpty(commitOptions.commit)) {
-            builder.addQueryParameter("t", fetchTimestampForRevision(commitOptions.commit));
-        } else if (!StringUtils.isEmpty(commitOptions.branchAndTimestamp)) {
-            builder.addQueryParameter("t", commitOptions.branchAndTimestamp);
+            return fetchTimestampForRevision(commitOptions.commit);
+        }
+        if (!StringUtils.isEmpty(commitOptions.branchAndTimestamp)) {
+            return commitOptions.branchAndTimestamp;
         } else {
             // auto-detect if neither option is given
             String commit = detectCommit();
             if (commit == null) {
                 throw new ParameterException(spec.commandLine(), "Failed to automatically detect the commit. Please specify it manually via --commit or --branch-and-timestamp");
             }
-            builder.addQueryParameter("t", fetchTimestampForRevision(commit));
+            return fetchTimestampForRevision(commit);
         }
     }
 

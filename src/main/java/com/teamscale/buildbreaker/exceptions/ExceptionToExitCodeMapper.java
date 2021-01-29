@@ -13,6 +13,8 @@ public class ExceptionToExitCodeMapper implements CommandLine.IExitCodeException
             return -4;
         } else if (t instanceof CommitCouldNotBeResolvedException) {
             return -5;
+        } else if (t instanceof AnalysisNotFinishedException) {
+            return -6;
         }
         return -1;
     }
