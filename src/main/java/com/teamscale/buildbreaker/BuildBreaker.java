@@ -198,6 +198,8 @@ public class BuildBreaker implements Callable<Integer> {
         this.accessKey = accessKey;
     }
 
+    // TODO (MP) I'd favor converting this to a Duration and specifying the value as ISO8601 in the CLI using P20m, P30s, see Duration.parse(text)
+    // Only if passed string is a number fall back to minutes or seconds (i'd prefer seconds tbh, minutes are so uncommon for timeouts :))
     /** Whether to evaluate thresholds */
     @Option(names = {"--wait-for-analysis-timeout"}, paramLabel = "<minutes-to-wait>", required = false, description = "The minutes this tool will wait for analysis of the given commit to be finished in Teamscale. This is useful when Teamscale starts analyzing at the same time this tool is called, and analysis is not yet finished. Default value is twenty minutes.")
     public int waitForAnalysisTimeoutMinutes = 20;
@@ -287,6 +289,8 @@ public class BuildBreaker implements Callable<Integer> {
             long timestamp = Long.parseLong(branchAndTimestamp[1]);
             return isAnalysisFinished(branch, timestamp);
         } catch (CommitCouldNotBeResolvedException e) {
+            // TODO (MP) CommitCouldNotBeResolvedException is also fired when more than 1 commit is returned by the service
+            // We would then busy wait although the server state is unlikely to change
             return false;
         }
     }
@@ -305,6 +309,7 @@ public class BuildBreaker implements Callable<Integer> {
         return lastFinishedTimestamp >= timestamp;
     }
 
+    // TODO (MP) move this method up, it reads stange at this point :)
     private void initDefaultOptions() {
         if (sslConnectionOptions == null) {
             sslConnectionOptions = new SslConnectionOptions();
@@ -321,7 +326,7 @@ public class BuildBreaker implements Callable<Integer> {
         HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
                 .addPathSegments("api/projects")
                 .addPathSegment(project)
-                .addPathSegments("finding-churn")
+                .addPathSegments("finding-churn") // TODO (MP) addPathSegment or combine with below?
                 .addPathSegments("list");
         addRevisionOrBranchTimestamp(builder);
         HttpUrl url = builder.build();
@@ -333,7 +338,7 @@ public class BuildBreaker implements Callable<Integer> {
         HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
                 .addPathSegments("api/projects")
                 .addPathSegment(project)
-                .addPathSegments("metric-assessments")
+                .addPathSegments("metric-assessments") // TODO (MP) addPathSegment?
                 .addQueryParameter("uniform-path", "")
                 .addQueryParameter("configuration-name", thresholdEvalOptions.thresholdConfig);
         addRevisionOrBranchTimestamp(builder);
@@ -354,6 +359,7 @@ public class BuildBreaker implements Callable<Integer> {
                     " this endpoint is reachable and not blocked by firewalls. " + e.getMessage());
         }
         // Never reached
+        // TODO (MP) Then assert this instead of returning null
         return null;
     }
 
@@ -376,6 +382,7 @@ public class BuildBreaker implements Callable<Integer> {
 
     private String determineBranchAndTimestamp() throws IOException {
         if (!StringUtils.isEmpty(commitOptions.commit)) {
+            // TODO (MP) should we cache the result - this request will be called all 10ms even if we already resolved  it.
             return fetchTimestampForRevision(commitOptions.commit);
         }
         if (!StringUtils.isEmpty(commitOptions.branchAndTimestamp)) {
@@ -383,20 +390,23 @@ public class BuildBreaker implements Callable<Integer> {
         } else {
             // auto-detect if neither option is given
             String commit = detectCommit();
+            // TODO (MP) cache?
             if (commit == null) {
                 throw new ParameterException(spec.commandLine(), "Failed to automatically detect the commit. Please specify it manually via --commit or --branch-and-timestamp");
             }
+
+            // TODO (MP) cache?
             return fetchTimestampForRevision(commit);
         }
     }
 
     private String fetchTimestampForRevision(String revision) throws IOException {
         HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
-                .addPathSegments("api/projects")
+                .addPathSegments("api/projects") // TODO (MP) addPathSegment?
                 .addPathSegment(project)
-                .addPathSegments("revision")
+                .addPathSegments("revision") // TODO (MP) addPathSegment?
                 .addPathSegment(revision)
-                .addPathSegments("commits");
+                .addPathSegments("commits"); // TODO (MP) addPathSegment?
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String commitDescriptorsJson = sendRequest(url, request);

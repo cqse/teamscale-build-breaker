@@ -2,6 +2,7 @@ package com.teamscale.buildbreaker.exceptions;
 
 import picocli.CommandLine;
 
+// TODO (MP) Could we just create a specialized version of RuntimeException that knows it's return value and let each of the exceptions below extend from that base exception class?
 public class ExceptionToExitCodeMapper implements CommandLine.IExitCodeExceptionMapper {
     @Override
     public int getExitCode(Throwable t) {

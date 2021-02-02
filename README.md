@@ -17,6 +17,8 @@ running in case of internal errors, only break the build on positive status code
 
 ### Required Parameters
 
+*TODO* Imho we should generate this part with pico cli. GitHub neatly formats *.adoc/ad/asciidoc files :) https://github.com/remkop/picocli/tree/master/picocli-codegen#generate-documentation
+
 **-p**, **--project**=*&lt;project&gt;*  
 The project ID or alias (NOT the project name!) relevant for the analysis.
 
@@ -44,6 +46,8 @@ Examples: master:1597845930000 or develop:HEAD
 **-c**, **--commit**=*&lt;commit-revision&gt;*  
 The version control commit revision for which analysis results should be obtained. This is typically the commit that the
 current CI pipeline is building. Can be either a Git SHA1, a SVN revision number or a Team Foundation changeset ID.
+
+*TODO* In the ts-upload we named this `--insecure` which aligns with curl
 
 **--disable-ssl-validation**  
 By default, SSL certificates are validated against the configured KeyStore. This flag disables validation which makes
