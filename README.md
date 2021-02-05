@@ -17,7 +17,10 @@ running in case of internal errors, only break the build on positive status code
 
 ### Required Parameters
 
-*TODO* Imho we should generate this part with pico cli. GitHub neatly formats *.adoc/ad/asciidoc files :) https://github.com/remkop/picocli/tree/master/picocli-codegen#generate-documentation
+*TODO* Imho we should generate this part with pico cli. GitHub neatly formats *.adoc/ad/asciidoc
+files :) https://github.com/remkop/picocli/tree/master/picocli-codegen#generate-documentation
+Yes, I tried this. The below has actually been generated partially automatically. However, the result was ugly, so I
+modified it manually.
 
 **-p**, **--project**=*&lt;project&gt;*  
 The project ID or alias (NOT the project name!) relevant for the analysis.
@@ -47,12 +50,6 @@ Examples: master:1597845930000 or develop:HEAD
 The version control commit revision for which analysis results should be obtained. This is typically the commit that the
 current CI pipeline is building. Can be either a Git SHA1, a SVN revision number or a Team Foundation changeset ID.
 
-*TODO* In the ts-upload we named this `--insecure` which aligns with curl
-
-**--disable-ssl-validation**  
-By default, SSL certificates are validated against the configured KeyStore. This flag disables validation which makes
-using this tool with self-signed certificates easier.
-
 **-f**, **--evaluate-findings**  
 If this option is set, findings introduced with the given commit will be evaluated.
 
@@ -67,6 +64,10 @@ Whether to fail on yellow metrics.
 
 **-h**, **--help**  
 Show this help message and exit.
+
+**--insecure**  
+By default, SSL certificates are validated against the configured KeyStore. This flag disables validation which makes
+using this tool with self-signed certificates easier.
 
 **-o**, **--threshold-config**=*&lt;thresholdConfig&gt;*  
 The name of the threshold config that should be used.
@@ -84,6 +85,11 @@ The path to the KeyStore must not contain a semicolon. Cannot be used in conjunc
 
 **-V**, **--version**  
 Print version information and exit.
+
+**--wait-for-analysis-timeout**=*&lt;iso-8601-duration&gt;*
+The duration this tool will wait for analysis of the given commit to be finished in Teamscale, given in ISO-8601
+format (e.g., P20m for 20 minutes or P30s for 30 seconds). This is useful when Teamscale starts analyzing at the same
+time this tool is called, and analysis is not yet finished. Default value is twenty minutes.
 
 **Exit codes**
 

@@ -1,7 +1,7 @@
 package com.teamscale.buildbreaker.exceptions;
 
-public class AnalysisNotFinishedException extends RuntimeException {
+public class AnalysisNotFinishedException extends BuildBreakerExceptionBase {
     public AnalysisNotFinishedException(String s) {
-        super(s);
+        super(s, -6);
     }
 }
