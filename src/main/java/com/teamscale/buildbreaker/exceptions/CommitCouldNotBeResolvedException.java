@@ -1,7 +1,7 @@
 package com.teamscale.buildbreaker.exceptions;
 
-public class CommitCouldNotBeResolvedException extends RuntimeException {
+public class CommitCouldNotBeResolvedException extends BuildBreakerExceptionBase {
     public CommitCouldNotBeResolvedException(String s) {
-        super(s);
+        super(s, -5);
     }
 }

@@ -3,6 +3,7 @@ package com.teamscale.buildbreaker;
 import com.google.gson.Gson;
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
+import com.sun.tools.javac.util.List;
 import com.teamscale.buildbreaker.autodetect_revision.EnvironmentVariableChecker;
 import com.teamscale.buildbreaker.autodetect_revision.GitChecker;
 import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
@@ -15,6 +16,7 @@ import com.teamscale.buildbreaker.exceptions.CommitCouldNotBeResolvedException;
 import com.teamscale.buildbreaker.exceptions.ExceptionToExitCodeMapper;
 import com.teamscale.buildbreaker.exceptions.PrintExceptionMessageHandler;
 import com.teamscale.buildbreaker.exceptions.SslConnectionFailureException;
+import com.teamscale.buildbreaker.exceptions.TooManyCommitsException;
 import okhttp3.Credentials;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
@@ -38,7 +40,12 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.Callable;
+import java.util.function.Supplier;
 
 @Command(name = "teamscale-buildbreaker", mixinStandardHelpOptions = true, version = "teamscale-buildbreaker 0.1",
         description = "Queries a Teamscale server for analysis results, evaluates them and emits a corresponding status code.",
@@ -66,6 +73,12 @@ public class BuildBreaker implements Callable<Integer> {
     /** Whether to evaluate thresholds, and detail options for that evaluation */
     @ArgGroup(exclusive = false)
     private ThresholdEvalOptions thresholdEvalOptions;
+
+    /** Caches already fetched mappings from revisions to corresponding timestamps. */
+    Map<String, String> timestampRevisionCache = new HashMap<>();
+
+    /** Caches the commit which should be analyzed. */
+    String detectedCommit = null;
 
     public static class ThresholdEvalOptions {
         /** Whether to evaluate thresholds */
@@ -198,15 +211,15 @@ public class BuildBreaker implements Callable<Integer> {
         this.accessKey = accessKey;
     }
 
-    /** Whether to evaluate thresholds */
-    @Option(names = {"--wait-for-analysis-timeout"}, paramLabel = "<minutes-to-wait>", required = false, description = "The minutes this tool will wait for analysis of the given commit to be finished in Teamscale. This is useful when Teamscale starts analyzing at the same time this tool is called, and analysis is not yet finished. Default value is twenty minutes.")
-    public int waitForAnalysisTimeoutMinutes = 20;
+    /** The duration to wait for Teamscale analysis of the commit to finish up. */
+    @Option(names = {"--wait-for-analysis-timeout"}, paramLabel = "<iso-8601-duration>", required = false, description = "The duration this tool will wait for analysis of the given commit to be finished in Teamscale, given in ISO-8601 format (e.g., P20m for 20 minutes or P30s for 30 seconds). This is useful when Teamscale starts analyzing at the same time this tool is called, and analysis is not yet finished. Default value is twenty minutes.")
+    public Duration waitForAnalysisTimeoutDuration = Duration.ofMinutes(20);
 
     @ArgGroup(exclusive = true)
     private SslConnectionOptions sslConnectionOptions;
 
     private class SslConnectionOptions {
-        @Option(names = "--disable-ssl-validation", description = "By default, SSL certificates are validated against the configured KeyStore." +
+        @Option(names = "--insecure", description = "By default, SSL certificates are validated against the configured KeyStore." +
                 " This flag disables validation which makes using this tool with self-signed certificates easier.")
         private boolean disableSslValidation;
 
@@ -247,7 +260,7 @@ public class BuildBreaker implements Callable<Integer> {
         EvaluationResult aggregatedResult = new EvaluationResult();
 
         try {
-            LocalDateTime timeout = LocalDateTime.now().plusMinutes(waitForAnalysisTimeoutMinutes);
+            LocalDateTime timeout = LocalDateTime.now().plus(waitForAnalysisTimeoutDuration);
             while (!isTeamscaleAnalysisFinished() && LocalDateTime.now().isBefore(timeout)) {
                 Thread.sleep(Duration.ofSeconds(10).toMillis());
             }
@@ -279,6 +292,18 @@ public class BuildBreaker implements Callable<Integer> {
         }
     }
 
+    private void initDefaultOptions() {
+        if (sslConnectionOptions == null) {
+            sslConnectionOptions = new SslConnectionOptions();
+        }
+        if (findingEvalOptions == null) {
+            findingEvalOptions = new FindingEvalOptions();
+        }
+        if (thresholdEvalOptions == null) {
+            thresholdEvalOptions = new ThresholdEvalOptions();
+        }
+    }
+
     private boolean isTeamscaleAnalysisFinished() throws IOException {
         try {
             String branchAndTimestampString = determineBranchAndTimestamp();
@@ -295,8 +320,8 @@ public class BuildBreaker implements Callable<Integer> {
         HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
                 .addPathSegments("api/projects")
                 .addPathSegment(project)
-                .addPathSegments("branch-analysis-state")
-                .addPathSegments(branch);
+                .addPathSegment("branch-analysis-state")
+                .addPathSegment(branch);
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String analysisStateJson = sendRequest(url, request);
@@ -305,24 +330,11 @@ public class BuildBreaker implements Callable<Integer> {
         return lastFinishedTimestamp >= timestamp;
     }
 
-    private void initDefaultOptions() {
-        if (sslConnectionOptions == null) {
-            sslConnectionOptions = new SslConnectionOptions();
-        }
-        if (findingEvalOptions == null) {
-            findingEvalOptions = new FindingEvalOptions();
-        }
-        if (thresholdEvalOptions == null) {
-            thresholdEvalOptions = new ThresholdEvalOptions();
-        }
-    }
-
     private String fetchFindings() throws IOException {
         HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
                 .addPathSegments("api/projects")
                 .addPathSegment(project)
-                .addPathSegments("finding-churn")
-                .addPathSegments("list");
+                .addPathSegments("finding-churn/list");
         addRevisionOrBranchTimestamp(builder);
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
@@ -333,7 +345,7 @@ public class BuildBreaker implements Callable<Integer> {
         HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
                 .addPathSegments("api/projects")
                 .addPathSegment(project)
-                .addPathSegments("metric-assessments")
+                .addPathSegment("metric-assessments")
                 .addQueryParameter("uniform-path", "")
                 .addQueryParameter("configuration-name", thresholdEvalOptions.thresholdConfig);
         addRevisionOrBranchTimestamp(builder);
@@ -354,7 +366,7 @@ public class BuildBreaker implements Callable<Integer> {
                     " this endpoint is reachable and not blocked by firewalls. " + e.getMessage());
         }
         // Never reached
-        return null;
+        throw new IllegalStateException("This state should never be reached");
     }
 
     private Request createAuthenticatedGetRequest(HttpUrl url) {
@@ -386,17 +398,21 @@ public class BuildBreaker implements Callable<Integer> {
             if (commit == null) {
                 throw new ParameterException(spec.commandLine(), "Failed to automatically detect the commit. Please specify it manually via --commit or --branch-and-timestamp");
             }
+
             return fetchTimestampForRevision(commit);
         }
     }
 
     private String fetchTimestampForRevision(String revision) throws IOException {
+        if (timestampRevisionCache.containsKey(revision)) {
+            return timestampRevisionCache.get(revision);
+        }
         HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
                 .addPathSegments("api/projects")
                 .addPathSegment(project)
-                .addPathSegments("revision")
+                .addPathSegment("revision")
                 .addPathSegment(revision)
-                .addPathSegments("commits");
+                .addPathSegment("commits");
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String commitDescriptorsJson = sendRequest(url, request);
@@ -405,9 +421,11 @@ public class BuildBreaker implements Callable<Integer> {
             throw new CommitCouldNotBeResolvedException("Could not resolve revision " + revision + " to a valid commit known to Teamscale (no commits returned)");
         }
         if (commitDescriptors.length > 1) {
-            throw new CommitCouldNotBeResolvedException("Could not resolve revision " + revision + " to a valid commit known to Teamscale (too many commits returned): " + StringUtils.concat(commitDescriptors, ", "));
+            throw new TooManyCommitsException("Could not resolve revision " + revision + " to a valid commit known to Teamscale (too many commits returned): " + StringUtils.concat(commitDescriptors, ", "));
         }
-        return commitDescriptors[0].toServiceCallFormat();
+        String timestamp = commitDescriptors[0].toServiceCallFormat();
+        timestampRevisionCache.put(revision, timestamp);
+        return timestamp;
     }
 
     public void handleSslConnectionFailure(SSLHandshakeException e) {
@@ -440,18 +458,11 @@ public class BuildBreaker implements Callable<Integer> {
         }
     }
 
-    private static String detectCommit() {
-        String commit = EnvironmentVariableChecker.findCommit();
-        if (commit != null) {
-            return commit;
-        }
-
-        commit = GitChecker.findCommit();
-        if (commit != null) {
-            return commit;
-        }
-
-        return SvnChecker.findRevision();
+    private String detectCommit() {
+        List<Supplier<String>> commitDetectionStrategies = List.of(() -> detectedCommit, EnvironmentVariableChecker::findCommit, GitChecker::findCommit, SvnChecker::findRevision);
+        Optional<String> optionalCommit = commitDetectionStrategies.stream().map(Supplier::get).filter(Objects::nonNull).findFirst();
+        optionalCommit.ifPresent(commit -> detectedCommit = commit);
+        return detectedCommit;
     }
 
     private void handleErrors(Response response) {
@@ -468,7 +479,7 @@ public class BuildBreaker implements Callable<Integer> {
         }
 
         if (response.code() == 401) {
-            HttpUrl editUserUrl = teamscaleServerUrl.newBuilder().addPathSegments("admin.html#users").addQueryParameter("action", "edit")
+            HttpUrl editUserUrl = teamscaleServerUrl.newBuilder().addPathSegment("admin.html#users").addQueryParameter("action", "edit")
                     .addQueryParameter("username", user).build();
             fail("You provided incorrect credentials." +
                             " Either the user '" + user + "' does not exist in Teamscale" +
@@ -490,7 +501,7 @@ public class BuildBreaker implements Callable<Integer> {
         }
 
         if (response.code() == 404) {
-            HttpUrl projectPerspectiveUrl = teamscaleServerUrl.newBuilder().addPathSegments("project.html").build();
+            HttpUrl projectPerspectiveUrl = teamscaleServerUrl.newBuilder().addPathSegment("project.html").build();
             fail("The project with ID or alias '" + project + "' does not seem to exist in Teamscale." +
                             " Please ensure that you used the project ID or the project alias, NOT the project name." +
                             " You can see the IDs of all projects at " + projectPerspectiveUrl +

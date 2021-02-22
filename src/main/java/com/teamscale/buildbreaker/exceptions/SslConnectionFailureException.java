@@ -1,7 +1,7 @@
 package com.teamscale.buildbreaker.exceptions;
 
-public class SslConnectionFailureException extends RuntimeException {
+public class SslConnectionFailureException extends BuildBreakerExceptionBase {
     public SslConnectionFailureException(String s) {
-        super(s);
+        super(s, -2);
     }
 }
