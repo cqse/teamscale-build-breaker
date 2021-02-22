@@ -17,11 +17,6 @@ running in case of internal errors, only break the build on positive status code
 
 ### Required Parameters
 
-*TODO* Imho we should generate this part with pico cli. GitHub neatly formats *.adoc/ad/asciidoc
-files :) https://github.com/remkop/picocli/tree/master/picocli-codegen#generate-documentation
-Yes, I tried this. The below has actually been generated partially automatically. However, the result was ugly, so I
-modified it manually.
-
 **-p**, **--project**=*&lt;project&gt;*  
 The project ID or alias (NOT the project name!) relevant for the analysis.
 
