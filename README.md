@@ -99,7 +99,7 @@ Running the native image only with --help/--version returns the help message/ver
 
 **Prerequisites**
 
-- Install graalvm (https://www.graalvm.org/getting-started/)
+- Install graalvm (https://www.graalvm.org/docs/getting-started/)
 - Install native-image extension of graalvm
 - Install maven (https://maven.apache.org/install.html)
 
