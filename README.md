@@ -95,6 +95,47 @@ time this tool is called, and analysis is not yet finished. Default value is twe
 
 Running the native image only with --help/--version returns the help message/version of the native image.
 
+## Jenkins integration
+
+To use this tool in a Jenkins pipeline, define a pipeline stage such as the following:
+
+    pipeline {
+        agent any
+    
+        stages {
+            stage ('Teamscale Analysis') {
+                steps {
+                    script {
+                        def statusCode = sh returnStatus: true, script:'/path/to/teamscale-buildbreaker --project=...'
+                        if (statusCode == 0) {
+                            currentBuild.result = 'SUCCESS';
+                            currentBuild.description = 'Teamscale analysis passed successfully';
+                        } else if (statusCode == 1) {
+                            currentBuild.result = 'FAILURE';
+                            currentBuild.description = 'Teamscale analysis detected rule violations';
+                        } else if (statusCode == 2) {
+                            currentBuild.result = 'FAILURE';
+                            currentBuild.description = 'Teamscale analysis detected warnings';
+                        } else if (statusCode < 0) {
+                            currentBuild.result = 'UNSTABLE';
+                            currentBuild.description = 'Could not fetch analysis result from Teamscale (internal error)';
+                        } else {
+                            currentBuild.result = 'UNSTABLE';
+                            currentBuild.description = 'Unknown status code ' + statusCode;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+Please adapt the path according to your installation and set the parameters of the call as explained in the "Usage"
+section of this document.
+
+On a Jenkins Windows installation, use `bat` instead of `sh` to call the tool. Feel free to adapt the build results and
+descriptions according to your needs, e.g. you might break the build instead of setting it to unstable in case of an
+internal error of the tool if you like.
+
 ## Building the Native Image
 
 **Prerequisites**
