@@ -3,7 +3,6 @@ package com.teamscale.buildbreaker;
 import com.google.gson.Gson;
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
-import com.sun.tools.javac.util.List;
 import com.teamscale.buildbreaker.autodetect_revision.EnvironmentVariableChecker;
 import com.teamscale.buildbreaker.autodetect_revision.GitChecker;
 import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
@@ -41,6 +40,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -67,7 +67,8 @@ public class BuildBreaker implements Callable<Integer> {
     private HttpUrl teamscaleServerUrl;
 
     /** The ID or alias of the Teamscale project */
-    @Option(names = {"-p", "--project"}, required = true, description = "The project ID or alias (NOT the project name!) relevant for the analysis.")
+    @Option(names = {"-p", "--project"}, required = true,
+            description = "The project ID or alias (NOT the project name!) relevant for the analysis.")
     private String project;
 
     /** Whether to evaluate thresholds, and detail options for that evaluation */
@@ -82,11 +83,13 @@ public class BuildBreaker implements Callable<Integer> {
 
     public static class ThresholdEvalOptions {
         /** Whether to evaluate thresholds */
-        @Option(names = {"-t", "--evaluate-thresholds"}, required = true, description = "If this option is set, metrics from a given threshold profile will be evaluated.")
+        @Option(names = {"-t", "--evaluate-thresholds"}, required = true,
+                description = "If this option is set, metrics from a given threshold profile will be evaluated.")
         public boolean evaluateThresholds;
 
         /** The threshold config to use */
-        @Option(names = {"-o", "--threshold-config"}, required = true, description = "The name of the threshold config that should be used.")
+        @Option(names = {"-o", "--threshold-config"}, required = true,
+                description = "The name of the threshold config that should be used.")
         public String thresholdConfig;
 
         /** Whether to fail on yellow metrics */
@@ -100,7 +103,8 @@ public class BuildBreaker implements Callable<Integer> {
 
     public static class FindingEvalOptions {
         /** Whether to evaluate findings */
-        @Option(names = {"-f", "--evaluate-findings"}, required = true, description = "If this option is set, findings introduced with the given commit will be evaluated.")
+        @Option(names = {"-f", "--evaluate-findings"}, required = true,
+                description = "If this option is set, findings introduced with the given commit will be evaluated.")
         public boolean evaluateFindings;
 
         /** Whether to fail on yellow findings */
@@ -108,7 +112,8 @@ public class BuildBreaker implements Callable<Integer> {
         public boolean failOnYellowFindings;
 
         /** Whether to fail on findings in modified code */
-        @Option(names = {"--fail-on-modified-code-findings"}, description = "Fail on findings in modified code (not just findings in new code).")
+        @Option(names = {"--fail-on-modified-code-findings"},
+                description = "Fail on findings in modified code (not just findings in new code).")
         public boolean failOnModified;
     }
 
@@ -127,23 +132,23 @@ public class BuildBreaker implements Callable<Integer> {
         /** The branch and timestamp info for the queried commit. May be <code>null</code>. */
         private String branchAndTimestamp;
 
-        @Option(names = {"-b", "--branch-and-timestamp"}, paramLabel = "<branch:timestamp>", description = "The branch and Unix Epoch timestamp for which analysis results should be evaluated." +
-                " This is typically the branch and commit timestamp of the commit that the current CI pipeline" +
-                " is building. The timestamp must be milliseconds since" +
-                " 00:00:00 UTC Thursday, 1 January 1970 or the string 'HEAD' to evaluate thresholds on" +
-                " the latest revision on that branch." +
-                "\nFormat: BRANCH:TIMESTAMP" +
-                "\nExample: master:1597845930000" +
-                "\nExample: develop:HEAD")
+        @Option(names = {"-b", "--branch-and-timestamp"}, paramLabel = "<branch:timestamp>",
+                description = "The branch and Unix Epoch timestamp for which analysis results should be evaluated." +
+                        " This is typically the branch and commit timestamp of the commit that the current CI pipeline" +
+                        " is building. The timestamp must be milliseconds since" +
+                        " 00:00:00 UTC Thursday, 1 January 1970 or the string 'HEAD' to evaluate thresholds on" +
+                        " the latest revision on that branch." + "\nFormat: BRANCH:TIMESTAMP" +
+                        "\nExample: master:1597845930000" + "\nExample: develop:HEAD")
         public void setBranchAndTimestamp(String branchAndTimestamp) {
             validateBranchAndTimestamp(branchAndTimestamp);
             this.branchAndTimestamp = branchAndTimestamp;
         }
 
         /** The revision (hash) of the queried commit. May be <code>null</code>. */
-        @Option(names = {"-c", "--commit"}, paramLabel = "<commit-revision>", description = "The version control commit revision for which analysis results should be obtained." +
-                " This is typically the commit that the current CI pipeline is building." +
-                " Can be either a Git SHA1, a SVN revision number or a Team Foundation changeset ID.")
+        @Option(names = {"-c", "--commit"}, paramLabel = "<commit-revision>",
+                description = "The version control commit revision for which analysis results should be obtained." +
+                        " This is typically the commit that the current CI pipeline is building." +
+                        " Can be either a Git SHA1, a SVN revision number or a Team Foundation changeset ID.")
         private String commit;
 
         private void validateBranchAndTimestamp(String branchAndTimestamp) throws ParameterException {
@@ -153,10 +158,11 @@ public class BuildBreaker implements Callable<Integer> {
 
             String[] parts = branchAndTimestamp.split(":", 2);
             if (parts.length == 1) {
-                throw new ParameterException(spec.commandLine(), "You specified an invalid branch and timestamp" +
-                        " with --branch-and-timestamp: " + branchAndTimestamp + "\nYou must  use the" +
-                        " format BRANCH:TIMESTAMP, where TIMESTAMP is a Unix timestamp in milliseconds" +
-                        " or the string 'HEAD' (to upload to the latest commit on that branch).");
+                throw new ParameterException(spec.commandLine(),
+                        "You specified an invalid branch and timestamp" + " with --branch-and-timestamp: " +
+                                branchAndTimestamp + "\nYou must  use the" +
+                                " format BRANCH:TIMESTAMP, where TIMESTAMP is a Unix timestamp in milliseconds" +
+                                " or the string 'HEAD' (to upload to the latest commit on that branch).");
             }
 
             String timestampPart = parts[1];
@@ -171,16 +177,17 @@ public class BuildBreaker implements Callable<Integer> {
             try {
                 long unixTimestamp = Long.parseLong(timestampPart);
                 if (unixTimestamp < 10000000000L) {
-                    String millisecondDate = DateTimeFormatter.RFC_1123_DATE_TIME.format(
-                            Instant.ofEpochMilli(unixTimestamp).atZone(ZoneOffset.UTC));
-                    String secondDate = DateTimeFormatter.RFC_1123_DATE_TIME.format(
-                            Instant.ofEpochSecond(unixTimestamp).atZone(ZoneOffset.UTC));
-                    throw new ParameterException(spec.commandLine(), "You specified an invalid timestamp with" +
-                            " --branch-and-timestamp. The timestamp '" + timestampPart + "'" +
-                            " is equal to " + millisecondDate + ". This is probably not what" +
-                            " you intended. Most likely you specified the timestamp in seconds," +
-                            " instead of milliseconds. If you use " + timestampPart + "000" +
-                            " instead, it will mean " + secondDate);
+                    String millisecondDate = DateTimeFormatter.RFC_1123_DATE_TIME
+                            .format(Instant.ofEpochMilli(unixTimestamp).atZone(ZoneOffset.UTC));
+                    String secondDate = DateTimeFormatter.RFC_1123_DATE_TIME
+                            .format(Instant.ofEpochSecond(unixTimestamp).atZone(ZoneOffset.UTC));
+                    throw new ParameterException(spec.commandLine(),
+                            "You specified an invalid timestamp with" + " --branch-and-timestamp. The timestamp '" +
+                                    timestampPart + "'" + " is equal to " + millisecondDate +
+                                    ". This is probably not what" +
+                                    " you intended. Most likely you specified the timestamp in seconds," +
+                                    " instead of milliseconds. If you use " + timestampPart + "000" +
+                                    " instead, it will mean " + secondDate);
                 }
             } catch (NumberFormatException e) {
                 throw new ParameterException(spec.commandLine(), "You specified an invalid timestamp with" +
@@ -193,51 +200,57 @@ public class BuildBreaker implements Callable<Integer> {
 
     private OkHttpClient client;
 
-    @Option(names = {"-s", "--server"}, paramLabel = "<teamscale-server-url>", required = true, description = "The URL under which the Teamscale server can be reached.")
+    @Option(names = {"-s", "--server"}, paramLabel = "<teamscale-server-url>", required = true,
+            description = "The URL under which the Teamscale server can be reached.")
     public void setTeamscaleServerUrl(String teamscaleServerUrl) {
         this.teamscaleServerUrl = HttpUrl.parse(teamscaleServerUrl);
         if (this.teamscaleServerUrl == null) {
-            throw new ParameterException(spec.commandLine(), "The URL you entered is not well-formed: " + teamscaleServerUrl);
+            throw new ParameterException(spec.commandLine(),
+                    "The URL you entered is not well-formed: " + teamscaleServerUrl);
         }
     }
 
-    @Option(names = {"-u", "--user"}, required = true, description = "The user that performs the query. Requires VIEW permission on the queried project.")
+    @Option(names = {"-u", "--user"}, required = true,
+            description = "The user that performs the query. Requires VIEW permission on the queried project.")
     public void setUser(String user) {
         this.user = user;
     }
 
-    @Option(names = {"-a", "--accesskey"}, paramLabel = "<accesskey>", required = true, description = "The IDE access key of the given user. Can be retrieved in Teamscale under Admin > Users.")
+    @Option(names = {"-a", "--accesskey"}, paramLabel = "<accesskey>", required = true,
+            description = "The IDE access key of the given user. Can be retrieved in Teamscale under Admin > Users.")
     public void setAccessKey(String accessKey) {
         this.accessKey = accessKey;
     }
 
     /** The duration to wait for Teamscale analysis of the commit to finish up. */
-    @Option(names = {"--wait-for-analysis-timeout"}, paramLabel = "<iso-8601-duration>", required = false, description = "The duration this tool will wait for analysis of the given commit to be finished in Teamscale, given in ISO-8601 format (e.g., P20m for 20 minutes or P30s for 30 seconds). This is useful when Teamscale starts analyzing at the same time this tool is called, and analysis is not yet finished. Default value is twenty minutes.")
+    @Option(names = {"--wait-for-analysis-timeout"}, paramLabel = "<iso-8601-duration>", required = false,
+            description = "The duration this tool will wait for analysis of the given commit to be finished in Teamscale, given in ISO-8601 format (e.g., P20m for 20 minutes or P30s for 30 seconds). This is useful when Teamscale starts analyzing at the same time this tool is called, and analysis is not yet finished. Default value is twenty minutes.")
     public Duration waitForAnalysisTimeoutDuration = Duration.ofMinutes(20);
 
     @ArgGroup(exclusive = true)
     private SslConnectionOptions sslConnectionOptions;
 
     private class SslConnectionOptions {
-        @Option(names = "--insecure", description = "By default, SSL certificates are validated against the configured KeyStore." +
-                " This flag disables validation which makes using this tool with self-signed certificates easier.")
+        @Option(names = "--insecure",
+                description = "By default, SSL certificates are validated against the configured KeyStore." +
+                        " This flag disables validation which makes using this tool with self-signed certificates easier.")
         private boolean disableSslValidation;
 
         private String keyStorePath;
 
         private String keyStorePassword;
 
-        @Option(names = "--trusted-keystore", paramLabel = "<keystore-path;password>", description = "A Java KeyStore file and its corresponding password. The KeyStore contains" +
-                " additional certificates that should be trusted when performing SSL requests." +
-                " Separate the path from the password with a semicolon, e.g:" +
-                "\n/path/to/keystore.jks;PASSWORD" +
-                "\nThe path to the KeyStore must not contain a semicolon. Cannot be used in conjunction with --disable-ssl-validation.")
+        @Option(names = "--trusted-keystore", paramLabel = "<keystore-path;password>",
+                description = "A Java KeyStore file and its corresponding password. The KeyStore contains" +
+                        " additional certificates that should be trusted when performing SSL requests." +
+                        " Separate the path from the password with a semicolon, e.g:" +
+                        "\n/path/to/keystore.jks;PASSWORD" +
+                        "\nThe path to the KeyStore must not contain a semicolon. Cannot be used in conjunction with --disable-ssl-validation.")
         public void setKeyStorePathAndPassword(String keystoreAndPassword) {
             String[] keystoreAndPasswordSplit = keystoreAndPassword.split(";", 2);
             this.keyStorePath = keystoreAndPasswordSplit[0];
             if (StringUtils.isEmpty(this.keyStorePath)) {
-                throw new ParameterException(spec.commandLine(),
-                        "You must supply a valid KeyStore path.");
+                throw new ParameterException(spec.commandLine(), "You must supply a valid KeyStore path.");
             }
             this.keyStorePassword = keystoreAndPasswordSplit[1];
         }
@@ -246,17 +259,18 @@ public class BuildBreaker implements Callable<Integer> {
 
     public static void main(String... args) {
         // Just let PicoCLI handle everything. Main entry point for PicoCLI is the "call()" method.
-        int exitCode = new CommandLine(new BuildBreaker())
-                .setExecutionExceptionHandler(new PrintExceptionMessageHandler())
-                .setExitCodeExceptionMapper(new ExceptionToExitCodeMapper())
-                .execute(args);
+        int exitCode =
+                new CommandLine(new BuildBreaker()).setExecutionExceptionHandler(new PrintExceptionMessageHandler())
+                        .setExitCodeExceptionMapper(new ExceptionToExitCodeMapper()).execute(args);
         System.exit(exitCode);
     }
 
     @Override
     public Integer call() throws Exception {
         initDefaultOptions();
-        client = OkHttpClientUtils.createClient(sslConnectionOptions.disableSslValidation, sslConnectionOptions.keyStorePath, sslConnectionOptions.keyStorePassword);
+        client = OkHttpClientUtils
+                .createClient(sslConnectionOptions.disableSslValidation, sslConnectionOptions.keyStorePath,
+                        sslConnectionOptions.keyStorePassword);
         EvaluationResult aggregatedResult = new EvaluationResult();
 
         try {
@@ -265,18 +279,22 @@ public class BuildBreaker implements Callable<Integer> {
                 Thread.sleep(Duration.ofSeconds(10).toMillis());
             }
             if (!isTeamscaleAnalysisFinished()) {
-                throw new AnalysisNotFinishedException("The commit that should be evaluated was not analyzed by Teamscale in time before the analysis timeout. You can change this timeout using --wait-for-analysis-timeout.");
+                throw new AnalysisNotFinishedException(
+                        "The commit that should be evaluated was not analyzed by Teamscale in time before the analysis timeout. You can change this timeout using --wait-for-analysis-timeout.");
             }
             if (thresholdEvalOptions.evaluateThresholds) {
                 String metricAssessments = fetchMetricAssessments();
-                EvaluationResult metricResult = new MetricsEvaluator().evaluate(metricAssessments, thresholdEvalOptions.failOnYellowMetrics);
+                EvaluationResult metricResult =
+                        new MetricsEvaluator().evaluate(metricAssessments, thresholdEvalOptions.failOnYellowMetrics);
                 aggregatedResult.addAll(metricResult);
                 System.out.println(metricResult);
             }
 
             if (findingEvalOptions.evaluateFindings) {
                 String findingAssessments = fetchFindings();
-                EvaluationResult findingsResult = new FindingsEvaluator().evaluate(findingAssessments, findingEvalOptions.failOnYellowFindings, findingEvalOptions.failOnModified);
+                EvaluationResult findingsResult = new FindingsEvaluator()
+                        .evaluate(findingAssessments, findingEvalOptions.failOnYellowFindings,
+                                findingEvalOptions.failOnModified);
                 aggregatedResult.addAll(findingsResult);
                 System.out.println(findingsResult);
             }
@@ -317,24 +335,26 @@ public class BuildBreaker implements Callable<Integer> {
     }
 
     private boolean isAnalysisFinished(String branch, long timestamp) throws IOException {
-        HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
-                .addPathSegments("api/projects")
-                .addPathSegment(project)
-                .addPathSegment("branch-analysis-state")
-                .addPathSegment(branch);
+        HttpUrl.Builder builder =
+                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
+                        .addPathSegment("branch-analysis-state").addPathSegment(branch);
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String analysisStateJson = sendRequest(url, request);
         DocumentContext analysisState = JsonPath.parse(analysisStateJson);
-        Long lastFinishedTimestamp = analysisState.read("$.timestamp");
-        return lastFinishedTimestamp >= timestamp;
+        try {
+            Integer lastFinishedTimestamp = analysisState.read("$.timestamp");
+            return lastFinishedTimestamp >= timestamp;
+        } catch (ClassCastException e) {
+            Long lastFinishedTimestamp = analysisState.read("$.timestamp");
+            return lastFinishedTimestamp >= timestamp;
+        }
     }
 
     private String fetchFindings() throws IOException {
-        HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
-                .addPathSegments("api/projects")
-                .addPathSegment(project)
-                .addPathSegments("finding-churn/list");
+        HttpUrl.Builder builder =
+                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
+                        .addPathSegments("finding-churn/list");
         addRevisionOrBranchTimestamp(builder);
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
@@ -342,12 +362,10 @@ public class BuildBreaker implements Callable<Integer> {
     }
 
     private String fetchMetricAssessments() throws IOException {
-        HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
-                .addPathSegments("api/projects")
-                .addPathSegment(project)
-                .addPathSegment("metric-assessments")
-                .addQueryParameter("uniform-path", "")
-                .addQueryParameter("configuration-name", thresholdEvalOptions.thresholdConfig);
+        HttpUrl.Builder builder =
+                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
+                        .addPathSegment("metric-assessments").addQueryParameter("uniform-path", "")
+                        .addQueryParameter("configuration-name", thresholdEvalOptions.thresholdConfig);
         addRevisionOrBranchTimestamp(builder);
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
@@ -370,11 +388,7 @@ public class BuildBreaker implements Callable<Integer> {
     }
 
     private Request createAuthenticatedGetRequest(HttpUrl url) {
-        return new Request.Builder()
-                .header("Authorization", Credentials.basic(user, accessKey))
-                .url(url)
-                .get()
-                .build();
+        return new Request.Builder().header("Authorization", Credentials.basic(user, accessKey)).url(url).get().build();
     }
 
     /**
@@ -396,7 +410,8 @@ public class BuildBreaker implements Callable<Integer> {
             // auto-detect if neither option is given
             String commit = detectCommit();
             if (commit == null) {
-                throw new ParameterException(spec.commandLine(), "Failed to automatically detect the commit. Please specify it manually via --commit or --branch-and-timestamp");
+                throw new ParameterException(spec.commandLine(),
+                        "Failed to automatically detect the commit. Please specify it manually via --commit or --branch-and-timestamp");
             }
 
             return fetchTimestampForRevision(commit);
@@ -407,21 +422,21 @@ public class BuildBreaker implements Callable<Integer> {
         if (timestampRevisionCache.containsKey(revision)) {
             return timestampRevisionCache.get(revision);
         }
-        HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
-                .addPathSegments("api/projects")
-                .addPathSegment(project)
-                .addPathSegment("revision")
-                .addPathSegment(revision)
-                .addPathSegment("commits");
+        HttpUrl.Builder builder =
+                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
+                        .addPathSegment("revision").addPathSegment(revision).addPathSegment("commits");
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String commitDescriptorsJson = sendRequest(url, request);
         CommitDescriptor[] commitDescriptors = new Gson().fromJson(commitDescriptorsJson, CommitDescriptor[].class);
         if (commitDescriptors.length == 0) {
-            throw new CommitCouldNotBeResolvedException("Could not resolve revision " + revision + " to a valid commit known to Teamscale (no commits returned)");
+            throw new CommitCouldNotBeResolvedException("Could not resolve revision " + revision +
+                    " to a valid commit known to Teamscale (no commits returned)");
         }
         if (commitDescriptors.length > 1) {
-            throw new TooManyCommitsException("Could not resolve revision " + revision + " to a valid commit known to Teamscale (too many commits returned): " + StringUtils.concat(commitDescriptors, ", "));
+            throw new TooManyCommitsException("Could not resolve revision " + revision +
+                    " to a valid commit known to Teamscale (too many commits returned): " +
+                    StringUtils.concat(commitDescriptors, ", "));
         }
         String timestamp = commitDescriptors[0].toServiceCallFormat();
         timestampRevisionCache.put(revision, timestamp);
@@ -430,37 +445,45 @@ public class BuildBreaker implements Callable<Integer> {
 
     public void handleSslConnectionFailure(SSLHandshakeException e) {
         if (!StringUtils.isEmpty(sslConnectionOptions.keyStorePath)) {
-            throw new SslConnectionFailureException("Failed to connect via HTTPS to " + teamscaleServerUrl + ": " + e.getMessage() +
-                    "\nYou enabled certificate validation and provided a keystore with certificates" +
-                    " that should be considered valid. Still, the connection failed." +
-                    " Most likely, you did not provide the correct certificates in the keystore" +
-                    " or some certificates are missing from it." +
-                    "\nPlease also ensure that your Teamscale instance is reachable under " + teamscaleServerUrl +
-                    " and that it is configured for HTTPS, not HTTP. E.g. open that URL in your" +
-                    " browser and verify that you can connect successfully.");
+            throw new SslConnectionFailureException(
+                    "Failed to connect via HTTPS to " + teamscaleServerUrl + ": " + e.getMessage() +
+                            "\nYou enabled certificate validation and provided a keystore with certificates" +
+                            " that should be considered valid. Still, the connection failed." +
+                            " Most likely, you did not provide the correct certificates in the keystore" +
+                            " or some certificates are missing from it." +
+                            "\nPlease also ensure that your Teamscale instance is reachable under " +
+                            teamscaleServerUrl +
+                            " and that it is configured for HTTPS, not HTTP. E.g. open that URL in your" +
+                            " browser and verify that you can connect successfully.");
         } else if (sslConnectionOptions.disableSslValidation) {
-            throw new SslConnectionFailureException("Failed to connect via HTTPS to " + teamscaleServerUrl + ": " + e.getMessage() +
-                    "\nYou enabled certificate validation. Most likely, your certificate" +
-                    " is either self-signed or your root CA's certificate is not known to" +
-                    " teamscale-upload. Please provide the path to a keystore that contains" +
-                    " the necessary public certificates that should be trusted by" +
-                    " teamscale-upload via --trusted-keystore. You can create a Java keystore" +
-                    " with your certificates as described here:" +
-                    " https://docs.teamscale.com/howto/connecting-via-https/#using-self-signed-certificates" +
-                    "\nPlease also ensure that your Teamscale instance is reachable under " + teamscaleServerUrl +
-                    " and that it is configured for HTTPS, not HTTP. E.g. open that URL in your" +
-                    " browser and verify that you can connect successfully.");
+            throw new SslConnectionFailureException(
+                    "Failed to connect via HTTPS to " + teamscaleServerUrl + ": " + e.getMessage() +
+                            "\nYou enabled certificate validation. Most likely, your certificate" +
+                            " is either self-signed or your root CA's certificate is not known to" +
+                            " teamscale-upload. Please provide the path to a keystore that contains" +
+                            " the necessary public certificates that should be trusted by" +
+                            " teamscale-upload via --trusted-keystore. You can create a Java keystore" +
+                            " with your certificates as described here:" +
+                            " https://docs.teamscale.com/howto/connecting-via-https/#using-self-signed-certificates" +
+                            "\nPlease also ensure that your Teamscale instance is reachable under " +
+                            teamscaleServerUrl +
+                            " and that it is configured for HTTPS, not HTTP. E.g. open that URL in your" +
+                            " browser and verify that you can connect successfully.");
         } else {
-            throw new SslConnectionFailureException("Failed to connect via HTTPS to " + teamscaleServerUrl + ": " + e.getMessage() +
-                    "\nPlease ensure that your Teamscale instance is reachable under " + teamscaleServerUrl +
-                    " and that it is configured for HTTPS, not HTTP. E.g. open that URL in your" +
-                    " browser and verify that you can connect successfully.");
+            throw new SslConnectionFailureException(
+                    "Failed to connect via HTTPS to " + teamscaleServerUrl + ": " + e.getMessage() +
+                            "\nPlease ensure that your Teamscale instance is reachable under " + teamscaleServerUrl +
+                            " and that it is configured for HTTPS, not HTTP. E.g. open that URL in your" +
+                            " browser and verify that you can connect successfully.");
         }
     }
 
     private String detectCommit() {
-        List<Supplier<String>> commitDetectionStrategies = List.of(() -> detectedCommit, EnvironmentVariableChecker::findCommit, GitChecker::findCommit, SvnChecker::findRevision);
-        Optional<String> optionalCommit = commitDetectionStrategies.stream().map(Supplier::get).filter(Objects::nonNull).findFirst();
+        List<Supplier<String>> commitDetectionStrategies =
+                List.of(() -> detectedCommit, EnvironmentVariableChecker::findCommit, GitChecker::findCommit,
+                        SvnChecker::findRevision);
+        Optional<String> optionalCommit =
+                commitDetectionStrategies.stream().map(Supplier::get).filter(Objects::nonNull).findFirst();
         optionalCommit.ifPresent(commit -> detectedCommit = commit);
         return detectedCommit;
     }
@@ -471,33 +494,27 @@ public class BuildBreaker implements Callable<Integer> {
             if (location == null) {
                 location = "<server did not provide a location header>";
             }
-            fail("You provided an incorrect URL. The server responded with a redirect to " +
-                            "'" + location + "'." +
-                            " This may e.g. happen if you used HTTP instead of HTTPS." +
-                            " Please use the correct URL for Teamscale instead.",
-                    response);
+            fail("You provided an incorrect URL. The server responded with a redirect to " + "'" + location + "'." +
+                    " This may e.g. happen if you used HTTP instead of HTTPS." +
+                    " Please use the correct URL for Teamscale instead.", response);
         }
 
         if (response.code() == 401) {
-            HttpUrl editUserUrl = teamscaleServerUrl.newBuilder().addPathSegment("admin.html#users").addQueryParameter("action", "edit")
-                    .addQueryParameter("username", user).build();
-            fail("You provided incorrect credentials." +
-                            " Either the user '" + user + "' does not exist in Teamscale" +
-                            " or the access key you provided is incorrect." +
-                            " Please check both the username and access key in Teamscale under Admin > Users:" +
-                            " " + editUserUrl +
-                            "\nPlease use the user's access key, not their password.",
-                    response);
+            HttpUrl editUserUrl = teamscaleServerUrl.newBuilder().addPathSegment("admin.html#users")
+                    .addQueryParameter("action", "edit").addQueryParameter("username", user).build();
+            fail("You provided incorrect credentials." + " Either the user '" + user + "' does not exist in Teamscale" +
+                    " or the access key you provided is incorrect." +
+                    " Please check both the username and access key in Teamscale under Admin > Users:" + " " +
+                    editUserUrl + "\nPlease use the user's access key, not their password.", response);
         }
 
         if (response.code() == 403) {
             // can't include a URL to the corresponding Teamscale screen since that page does not support aliases
             // and the user may have provided an alias, so we'd be directing them to a red error page in that case
-            fail("The user user '" + user + "' is not allowed to upload data to the Teamscale project '" + project + "'." +
-                            " Please grant this user the 'Perform External Uploads' permission in Teamscale" +
-                            " under Project Configuration > Projects by clicking on the button showing three" +
-                            " persons next to project '" + project + "'.",
-                    response);
+            fail("The user user '" + user + "' is not allowed to upload data to the Teamscale project '" + project +
+                    "'." + " Please grant this user the 'Perform External Uploads' permission in Teamscale" +
+                    " under Project Configuration > Projects by clicking on the button showing three" +
+                    " persons next to project '" + project + "'.", response);
         }
 
         if (response.code() == 404) {
@@ -525,8 +542,8 @@ public class BuildBreaker implements Callable<Integer> {
      * Print error message and server response, then exit program
      */
     private void fail(String message, Response response) {
-        fail("Program execution failed:\n\n" + message + "\n\nTeamscale's response:\n" +
-                response.toString() + "\n" + OkHttpClientUtils.readBodySafe(response));
+        fail("Program execution failed:\n\n" + message + "\n\nTeamscale's response:\n" + response.toString() + "\n" +
+                OkHttpClientUtils.readBodySafe(response));
     }
 }
 
