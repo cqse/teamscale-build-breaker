@@ -109,37 +109,37 @@ To use this tool in a Jenkins pipeline, complete the following steps:
    teamscale-credentials"
 5. Define a pipeline stage such as the following:
 
-    pipeline {
-        agent any
-    
-        stages {
-            stage ('Teamscale Analysis') {
-                steps {
-                    withCredentials([usernamePassword(credentialsId: 'teamscale-credentials', usernameVariable: 'USER', passwordVariable: 'ACCESSKEY')]) {
-                        script {
-                            def statusCode = sh returnStatus: true, script:'/path/to/teamscale-buildbreaker --user=$USER --accesskey=$ACCESSKEY --project=...'
-                            if (statusCode == 0) {
-                                currentBuild.result = 'SUCCESS';
-                                currentBuild.description = 'Teamscale analysis passed successfully';
-                            } else if (statusCode == 1) {
-                                currentBuild.result = 'FAILURE';
-                                currentBuild.description = 'Teamscale analysis detected rule violations';
-                            } else if (statusCode == 2) {
-                                currentBuild.result = 'FAILURE';
-                                currentBuild.description = 'Teamscale analysis detected warnings';
-                            } else if (statusCode < 0) {
-                                currentBuild.result = 'UNSTABLE';
-                                currentBuild.description = 'Could not fetch analysis result from Teamscale (internal error)';
-                            } else {
-                                currentBuild.result = 'UNSTABLE';
-                                currentBuild.description = 'Unknown status code ' + statusCode;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+       pipeline {
+          agent any
+          
+          stages {
+              stage ('Teamscale Analysis') {
+                  steps {
+                      withCredentials([usernamePassword(credentialsId: 'teamscale-credentials', usernameVariable: 'USER', passwordVariable: 'ACCESSKEY')]) {
+                          script {
+                              def statusCode = sh returnStatus: true, script:'/path/to/teamscale-buildbreaker --user=$USER --accesskey=$ACCESSKEY --project=...'
+                              if (statusCode == 0) {
+                                  currentBuild.result = 'SUCCESS';
+                                  currentBuild.description = 'Teamscale analysis passed successfully';
+                              } else if (statusCode == 1) {
+                                  currentBuild.result = 'FAILURE';
+                                  currentBuild.description = 'Teamscale analysis detected rule violations';
+                              } else if (statusCode == 2) {
+                                  currentBuild.result = 'FAILURE';
+                                  currentBuild.description = 'Teamscale analysis detected warnings';
+                              } else if (statusCode < 0) {
+                                  currentBuild.result = 'UNSTABLE';
+                                  currentBuild.description = 'Could not fetch analysis result from Teamscale (internal error)';
+                              } else {
+                                  currentBuild.result = 'UNSTABLE';
+                                  currentBuild.description = 'Unknown status code ' + statusCode;
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+       }
 
 Please adapt the path according to your installation and set the parameters of the call as explained in the "Usage"
 section of this document.
