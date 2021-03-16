@@ -27,7 +27,7 @@ jobs:
         uses: crazy-max/ghaction-upx@v1
         with:
           version: latest
-          file: ./teamscale-buildbreaker
+          file: ./target/teamscale-buildbreaker
       - name: 'Upload Artifact'
         if: ${{ always() }}
         uses: actions/upload-artifact@v2
@@ -55,7 +55,7 @@ jobs:
         uses: crazy-max/ghaction-upx@v1
         with:
           version: latest
-          file: ./teamscale-buildbreaker.exe
+          file: ./target/teamscale-buildbreaker.exe
       - name: 'Upload Artifact'
         if: ${{ always() }}
         uses: actions/upload-artifact@v2
