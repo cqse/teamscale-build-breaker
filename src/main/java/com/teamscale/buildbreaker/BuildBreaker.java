@@ -288,6 +288,13 @@ public class BuildBreaker implements Callable<Integer> {
                         new MetricsEvaluator().evaluate(metricAssessments, thresholdEvalOptions.failOnYellowMetrics);
                 aggregatedResult.addAll(metricResult);
                 System.out.println(metricResult);
+                if (metricResult.toStatusCode() > 0) {
+                    HttpUrl.Builder urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("metrics.html")
+                            .fragment("/" + project + "?t=" + determineBranchAndTimestamp());
+                    System.out.println(
+                            "More detailed information about these metrics is available in Teamscale's web interface at " +
+                                    urlBuilder.build());
+                }
             }
 
             if (findingEvalOptions.evaluateFindings) {
@@ -297,6 +304,13 @@ public class BuildBreaker implements Callable<Integer> {
                                 findingEvalOptions.failOnModified);
                 aggregatedResult.addAll(findingsResult);
                 System.out.println(findingsResult);
+                if (findingsResult.toStatusCode() > 0) {
+                    HttpUrl.Builder urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("activity.html")
+                            .fragment("details/" + project + "?t=" + determineBranchAndTimestamp());
+                    System.out.println(
+                            "More detailed information about these findings is available in Teamscale's web interface at " +
+                                    urlBuilder.build());
+                }
             }
             return aggregatedResult.toStatusCode();
         } catch (SSLHandshakeException e) {

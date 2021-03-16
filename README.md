@@ -97,7 +97,17 @@ Running the native image only with --help/--version returns the help message/ver
 
 ## Jenkins integration
 
-To use this tool in a Jenkins pipeline, define a pipeline stage such as the following:
+To use this tool in a Jenkins pipeline, complete the following steps:
+
+1. Place the binary into a directory of your choice on your Jenkins build agents
+2. Make sure you have the "Credentials" as well as the "Credentials Binding" Jenkins plugin
+   installed (https://plugins.jenkins.io/credentials/, https://plugins.jenkins.io/credentials-binding/)
+3. In Teamscale, acquire the Teamscale access key for the user that should connect to the Teamscale instance (as
+   explained in https://docs.teamscale.com/glossary/#access-key). The user needs to have `VIEW` permissions on the
+   project
+4. Enter the user name and access key into the Jenkins credentials store and save it under a fitting ID, e.g. "
+   teamscale-credentials"
+5. Define a pipeline stage such as the following:
 
     pipeline {
         agent any
@@ -105,23 +115,25 @@ To use this tool in a Jenkins pipeline, define a pipeline stage such as the foll
         stages {
             stage ('Teamscale Analysis') {
                 steps {
-                    script {
-                        def statusCode = sh returnStatus: true, script:'/path/to/teamscale-buildbreaker --project=...'
-                        if (statusCode == 0) {
-                            currentBuild.result = 'SUCCESS';
-                            currentBuild.description = 'Teamscale analysis passed successfully';
-                        } else if (statusCode == 1) {
-                            currentBuild.result = 'FAILURE';
-                            currentBuild.description = 'Teamscale analysis detected rule violations';
-                        } else if (statusCode == 2) {
-                            currentBuild.result = 'FAILURE';
-                            currentBuild.description = 'Teamscale analysis detected warnings';
-                        } else if (statusCode < 0) {
-                            currentBuild.result = 'UNSTABLE';
-                            currentBuild.description = 'Could not fetch analysis result from Teamscale (internal error)';
-                        } else {
-                            currentBuild.result = 'UNSTABLE';
-                            currentBuild.description = 'Unknown status code ' + statusCode;
+                    withCredentials([usernamePassword(credentialsId: 'teamscale-credentials', usernameVariable: 'USER', passwordVariable: 'ACCESSKEY')]) {
+                        script {
+                            def statusCode = sh returnStatus: true, script:'/path/to/teamscale-buildbreaker --user=$USER --accesskey=$ACCESSKEY --project=...'
+                            if (statusCode == 0) {
+                                currentBuild.result = 'SUCCESS';
+                                currentBuild.description = 'Teamscale analysis passed successfully';
+                            } else if (statusCode == 1) {
+                                currentBuild.result = 'FAILURE';
+                                currentBuild.description = 'Teamscale analysis detected rule violations';
+                            } else if (statusCode == 2) {
+                                currentBuild.result = 'FAILURE';
+                                currentBuild.description = 'Teamscale analysis detected warnings';
+                            } else if (statusCode < 0) {
+                                currentBuild.result = 'UNSTABLE';
+                                currentBuild.description = 'Could not fetch analysis result from Teamscale (internal error)';
+                            } else {
+                                currentBuild.result = 'UNSTABLE';
+                                currentBuild.description = 'Unknown status code ' + statusCode;
+                            }
                         }
                     }
                 }
