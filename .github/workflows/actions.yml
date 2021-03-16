@@ -27,7 +27,7 @@ jobs:
         uses: crazy-max/ghaction-upx@v1
         with:
           version: latest
-          file: ./target
+          file: ./teamscale-buildbreaker
       - name: 'Upload Artifact'
         if: ${{ always() }}
         uses: actions/upload-artifact@v2
@@ -55,7 +55,7 @@ jobs:
         uses: crazy-max/ghaction-upx@v1
         with:
           version: latest
-          file: ./target
+          file: ./teamscale-buildbreaker.exe
       - name: 'Upload Artifact'
         if: ${{ always() }}
         uses: actions/upload-artifact@v2
@@ -75,14 +75,14 @@ jobs:
       - uses: actions/download-artifact@v2
       - name: Package
         run: |
-          (cd ./target-linux && zip ../teamscale-upload-linux.zip ./teamscale-build-breaker)
-          (cd ./target-windows && zip ../teamscale-upload-windows.zip ./teamscale-build-breaker.exe)
+          (cd ./target-linux && zip ../teamscale-buildbreaker-linux.zip ./teamscale-buildbreaker)
+          (cd ./target-windows && zip ../teamscale-buildbreaker-windows.zip ./teamscale-buildbreaker.exe)
       - name: Upload Release Assets
         id: create_release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ github.ref }}
-          file: teamscale-build-breaker-*.zip
+          file: teamscale-buildbreaker-*.zip
           file_glob: true
           overwrite: true
