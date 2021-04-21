@@ -23,10 +23,8 @@ import java.io.Serializable;
 import java.util.Objects;
 
 /**
- * Immutable class describing a single commit by its branch name and a
- * timestamp. The timestamp must be unique within the branch. They are
- * comparable by timestamp, where equal timestamps are resolved alphabetically
- * by the branch name.
+ * Immutable class describing a single commit by its branch name and a timestamp. The timestamp must be unique within
+ * the branch. They are comparable by timestamp, where equal timestamps are resolved alphabetically by the branch name.
  */
 public class CommitDescriptor implements Serializable, Comparable<CommitDescriptor> {
 
@@ -38,6 +36,12 @@ public class CommitDescriptor implements Serializable, Comparable<CommitDescript
 
     /** The timestamp on the branch. */
     private final long timestamp;
+
+    /** Gson constructor. */
+    public CommitDescriptor() {
+        branchName = null;
+        timestamp = 0L;
+    }
 
     public CommitDescriptor(String branchName, long timestamp) {
         CCSMAssert.isTrue(timestamp >= 0, "Timestamp must be >= 0 but is " + timestamp);
