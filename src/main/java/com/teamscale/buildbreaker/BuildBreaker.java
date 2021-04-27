@@ -1,6 +1,7 @@
 package com.teamscale.buildbreaker;
 
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import com.teamscale.buildbreaker.autodetect_revision.EnvironmentVariableChecker;
@@ -442,7 +443,7 @@ public class BuildBreaker implements Callable<Integer> {
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String commitDescriptorsJson = sendRequest(url, request);
-        CommitDescriptor[] commitDescriptors = new Gson().fromJson(commitDescriptorsJson, CommitDescriptor[].class);
+        CommitDescriptor[] commitDescriptors = createGson().fromJson(commitDescriptorsJson, CommitDescriptor[].class);
         if (commitDescriptors.length == 0) {
             throw new CommitCouldNotBeResolvedException("Could not resolve revision " + revision +
                     " to a valid commit known to Teamscale (no commits returned)");
@@ -455,6 +456,12 @@ public class BuildBreaker implements Callable<Integer> {
         String timestamp = commitDescriptors[0].toServiceCallFormat();
         timestampRevisionCache.put(revision, timestamp);
         return timestamp;
+    }
+
+    private Gson createGson() {
+        GsonBuilder gsonBuilder = new GsonBuilder();
+        gsonBuilder.registerTypeAdapter(CommitDescriptor.class, new CommitDescriptorInstanceCreator());
+        return gsonBuilder.create();
     }
 
     public void handleSslConnectionFailure(SSLHandshakeException e) {
