@@ -15,6 +15,9 @@ public class EvaluationResult {
 
     @Override
     public String toString() {
+        if (!hasWarnings() && !hasErrors()) {
+            return "No violations detected";
+        }
         StringBuilder sb = new StringBuilder();
         if (hasWarnings()) {
             sb.append("*WARNINGS*\n");

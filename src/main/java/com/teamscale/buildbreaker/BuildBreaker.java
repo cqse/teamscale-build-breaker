@@ -13,6 +13,7 @@ import com.teamscale.buildbreaker.evaluation.MetricsEvaluator;
 import com.teamscale.buildbreaker.exceptions.AnalysisNotFinishedException;
 import com.teamscale.buildbreaker.exceptions.CommitCouldNotBeResolvedException;
 import com.teamscale.buildbreaker.exceptions.ExceptionToExitCodeMapper;
+import com.teamscale.buildbreaker.exceptions.InvalidParametersException;
 import com.teamscale.buildbreaker.exceptions.PrintExceptionMessageHandler;
 import com.teamscale.buildbreaker.exceptions.SslConnectionFailureException;
 import com.teamscale.buildbreaker.exceptions.TooManyCommitsException;
@@ -89,11 +90,12 @@ public class BuildBreaker implements Callable<Integer> {
 
         /** The threshold config to use */
         @Option(names = {"-o", "--threshold-config"}, required = true,
-                description = "The name of the threshold config that should be used.")
+                description = "The name of the threshold config that should be used. Needs to be set if --evaluate-thresholds is active.")
         public String thresholdConfig;
 
         /** Whether to fail on yellow metrics */
-        @Option(names = {"--fail-on-yellow-metrics"}, description = "Whether to fail on yellow metrics.")
+        @Option(names = {"--fail-on-yellow-metrics"},
+                description = "Whether to fail on yellow metrics. Can only be used if --evaluate-thresholds is active.")
         public boolean failOnYellowMetrics;
     }
 
@@ -108,12 +110,13 @@ public class BuildBreaker implements Callable<Integer> {
         public boolean evaluateFindings;
 
         /** Whether to fail on yellow findings */
-        @Option(names = {"--fail-on-yellow-findings"}, description = "Whether to fail on yellow findings.")
+        @Option(names = {"--fail-on-yellow-findings"},
+                description = "Whether to fail on yellow findings. Can only be used if --evaluate-findings is active.")
         public boolean failOnYellowFindings;
 
         /** Whether to fail on findings in modified code */
         @Option(names = {"--fail-on-modified-code-findings"},
-                description = "Fail on findings in modified code (not just findings in new code).")
+                description = "Fail on findings in modified code (not just findings in new code). Can only be used if --evaluate-findings is active.")
         public boolean failOnModified;
     }
 
@@ -268,6 +271,10 @@ public class BuildBreaker implements Callable<Integer> {
     @Override
     public Integer call() throws Exception {
         initDefaultOptions();
+        if (!findingEvalOptions.evaluateFindings && !thresholdEvalOptions.failOnYellowMetrics) {
+            throw new InvalidParametersException(
+                    "Please specify at least one of --evaluate-findings or --evaluate-thresholds, otherwise no evaluation will take place.");
+        }
         client = OkHttpClientUtils
                 .createClient(sslConnectionOptions.disableSslValidation, sslConnectionOptions.keyStorePath,
                         sslConnectionOptions.keyStorePassword);
@@ -276,13 +283,18 @@ public class BuildBreaker implements Callable<Integer> {
         try {
             LocalDateTime timeout = LocalDateTime.now().plus(waitForAnalysisTimeoutDuration);
             while (!isTeamscaleAnalysisFinished() && LocalDateTime.now().isBefore(timeout)) {
+                System.out.println(
+                        "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Will retry in ten seconds until the timeout is reached at " +
+                                DateTimeFormatter.RFC_1123_DATE_TIME.format(timeout.atZone(ZoneOffset.UTC)) +
+                                ". You can change this timeout using --wait-for-analysis-timeout.");
                 Thread.sleep(Duration.ofSeconds(10).toMillis());
             }
             if (!isTeamscaleAnalysisFinished()) {
                 throw new AnalysisNotFinishedException(
-                        "The commit that should be evaluated was not analyzed by Teamscale in time before the analysis timeout. You can change this timeout using --wait-for-analysis-timeout.");
+                        "The commit that should be evaluated was not analyzed by Teamscale in time before the analysis timeout.");
             }
             if (thresholdEvalOptions.evaluateThresholds) {
+                System.out.println("Evaluating thresholds...");
                 String metricAssessments = fetchMetricAssessments();
                 EvaluationResult metricResult =
                         new MetricsEvaluator().evaluate(metricAssessments, thresholdEvalOptions.failOnYellowMetrics);
@@ -298,6 +310,7 @@ public class BuildBreaker implements Callable<Integer> {
             }
 
             if (findingEvalOptions.evaluateFindings) {
+                System.out.println("Evaluating findings...");
                 String findingAssessments = fetchFindings();
                 EvaluationResult findingsResult = new FindingsEvaluator()
                         .evaluate(findingAssessments, findingEvalOptions.failOnYellowFindings,
@@ -322,6 +335,7 @@ public class BuildBreaker implements Callable<Integer> {
             client.dispatcher().executorService().shutdownNow();
             client.connectionPool().evictAll();
         }
+
     }
 
     private void initDefaultOptions() {
