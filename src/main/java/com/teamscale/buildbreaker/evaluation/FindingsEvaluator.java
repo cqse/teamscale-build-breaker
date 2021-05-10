@@ -20,7 +20,8 @@ public class FindingsEvaluator {
         DocumentContext findings = JsonPath.parse(findingsJson);
         List<Map<String, Object>> findingsToEvaluate = findings.read("$..addedFindings.*");
         if (includeChangedCode) {
-            findingsToEvaluate.addAll(findings.read("$..findingsInChangedCode"));
+            List<Map<String, Object>> findingsInChangedCode = findings.read("$..findingsInChangedCode.*");
+            findingsToEvaluate.addAll(findingsInChangedCode);
         }
         try {
             for (Map<String, Object> finding : findingsToEvaluate) {
