@@ -1,12 +1,10 @@
 package com.teamscale.buildbreaker;
 
-import com.google.gson.Gson;
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import com.teamscale.buildbreaker.autodetect_revision.EnvironmentVariableChecker;
 import com.teamscale.buildbreaker.autodetect_revision.GitChecker;
 import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
-import com.teamscale.buildbreaker.data.CommitDescriptor;
 import com.teamscale.buildbreaker.evaluation.EvaluationResult;
 import com.teamscale.buildbreaker.evaluation.FindingsEvaluator;
 import com.teamscale.buildbreaker.evaluation.MetricsEvaluator;
@@ -46,6 +44,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Command(name = "teamscale-buildbreaker", mixinStandardHelpOptions = true, version = "teamscale-buildbreaker 0.1",
         description = "Queries a Teamscale server for analysis results, evaluates them and emits a corresponding status code.",
@@ -442,19 +442,39 @@ public class BuildBreaker implements Callable<Integer> {
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String commitDescriptorsJson = sendRequest(url, request);
-        CommitDescriptor[] commitDescriptors = new Gson().fromJson(commitDescriptorsJson, CommitDescriptor[].class);
-        if (commitDescriptors.length == 0) {
+        long braceCount = commitDescriptorsJson.chars().filter(c -> c == '{').count();
+        if (braceCount == 0) {
             throw new CommitCouldNotBeResolvedException("Could not resolve revision " + revision +
                     " to a valid commit known to Teamscale (no commits returned)");
         }
-        if (commitDescriptors.length > 1) {
+        if (braceCount > 1) {
             throw new TooManyCommitsException("Could not resolve revision " + revision +
-                    " to a valid commit known to Teamscale (too many commits returned): " +
-                    StringUtils.concat(commitDescriptors, ", "));
+                    " to a valid commit known to Teamscale (too many commits returned): " + commitDescriptorsJson);
         }
-        String timestamp = commitDescriptors[0].toServiceCallFormat();
-        timestampRevisionCache.put(revision, timestamp);
-        return timestamp;
+        String timestamp = extractTimestamp(commitDescriptorsJson);
+        String branchname = extractBranchname(commitDescriptorsJson);
+
+        String branchWithTimestamp = branchname + ":" + timestamp;
+        timestampRevisionCache.put(revision, branchWithTimestamp);
+        return branchWithTimestamp;
+    }
+
+    private String extractTimestamp(String commitDescriptorsJson) {
+        Pattern pattern = Pattern.compile("\"timestamp\"\\s*:\\s*(\\d+)\\b");
+        Matcher matcher = pattern.matcher(commitDescriptorsJson);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        throw new CommitCouldNotBeResolvedException("Could not parse commit descriptor JSON: " + commitDescriptorsJson);
+    }
+
+    private String extractBranchname(String commitDescriptorsJson) {
+        Pattern pattern = Pattern.compile("\"branchName\"\\s*:\\s*\"([^\"]+)\"");
+        Matcher matcher = pattern.matcher(commitDescriptorsJson);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        throw new CommitCouldNotBeResolvedException("Could not parse commit descriptor JSON: " + commitDescriptorsJson);
     }
 
     public void handleSslConnectionFailure(SSLHandshakeException e) {
