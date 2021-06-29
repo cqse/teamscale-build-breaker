@@ -95,7 +95,7 @@ public class BuildBreaker implements Callable<Integer> {
 
         /** Whether to fail on yellow metrics */
         @Option(names = {"--fail-on-yellow-metrics"},
-                description = "Whether to fail on yellow metrics. Can only be used if --evaluate-thresholds is active.")
+                description = "Whether to fail on yellow metrics (with exit code 2). Can only be used if --evaluate-thresholds is active.")
         public boolean failOnYellowMetrics;
     }
 
@@ -111,12 +111,12 @@ public class BuildBreaker implements Callable<Integer> {
 
         /** Whether to fail on yellow findings */
         @Option(names = {"--fail-on-yellow-findings"},
-                description = "Whether to fail on yellow findings. Can only be used if --evaluate-findings is active.")
+                description = "Whether to fail on yellow findings (with exit code 2). Can only be used if --evaluate-findings is active.")
         public boolean failOnYellowFindings;
 
         /** Whether to fail on findings in modified code */
         @Option(names = {"--fail-on-modified-code-findings"},
-                description = "Fail on findings in modified code (not just findings in new code). Can only be used if --evaluate-findings is active.")
+                description = "Fail on findings in modified code (not just new findings). Can only be used if --evaluate-findings is active.")
         public boolean failOnModified;
     }
 
