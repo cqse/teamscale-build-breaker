@@ -49,13 +49,13 @@ current CI pipeline is building. Can be either a Git SHA1, a SVN revision number
 If this option is set, findings introduced with the given commit will be evaluated.
 
 **--fail-on-modified-code-findings**  
-Fail on findings in modified code (not just findings in new code).
+Whether to on findings in modified code (not just new findings).
 
 **--fail-on-yellow-findings**  
-Whether to fail on yellow findings.
+Whether to fail on yellow findings (with exit code 2).
 
 **--fail-on-yellow-metrics**  
-Whether to fail on yellow metrics.
+Whether to fail on yellow metrics (with exit code 2).
 
 **-h**, **--help**  
 Show this help message and exit.
