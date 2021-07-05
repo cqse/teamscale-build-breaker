@@ -19,6 +19,24 @@ public class GitChecker {
         return null;
     }
 
+    public static String findRepoUrl() {
+        if (!isInsideGit()) {
+            System.out.println("The working directory does not appear to be within a Git repository.");
+            return null;
+        }
+
+        ProcessUtils.ProcessResult result = ProcessUtils.run("git", "config", "--get", "remote.origin.url");
+        if (result.wasSuccessful()) {
+            String repoUrl = result.stdoutAndStdErr.trim();
+            System.out.println("Using Repository URL " + repoUrl);
+            return repoUrl;
+        }
+
+        System.out.println("Failed to read remote repository URL. 'git config --get remote.origin.url' returned: " +
+                result.stdoutAndStdErr);
+        return null;
+    }
+ 
     private static boolean isInsideGit() {
         ProcessUtils.ProcessResult result = ProcessUtils.run("git", "rev-parse", "--is-inside-work-tree");
         return result.wasSuccessful() && result.stdoutAndStdErr.trim().equalsIgnoreCase("true");
