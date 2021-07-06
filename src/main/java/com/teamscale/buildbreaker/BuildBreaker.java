@@ -291,7 +291,7 @@ public class BuildBreaker implements Callable<Integer> {
             boolean teamscaleAnalysisFinished = isTeamscaleAnalysisFinished();
             if (!teamscaleAnalysisFinished) {
                 System.out.println(
-                        "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Triggering Teamscale commit hook on repository");
+                        "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Triggering Teamscale commit hook on repository.");
                 triggerCommitHookEvent();
             }
             while (!teamscaleAnalysisFinished && LocalDateTime.now().isBefore(timeout)) {
@@ -367,6 +367,7 @@ public class BuildBreaker implements Callable<Integer> {
                 .post(RequestBody.create(null, new byte[]{})).build();
         try {
             sendRequest(url, request);
+            System.out.println("Commit hook triggered successfully.");
         } catch (IOException e) {
             System.out.println("Failure when trying to send the commit hook event to Teamscale: " + e);
         }
