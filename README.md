@@ -83,8 +83,8 @@ Print version information and exit.
 
 **--wait-for-analysis-timeout**=*&lt;iso-8601-duration&gt;*
 The duration this tool will wait for analysis of the given commit to be finished in Teamscale, given in ISO-8601
-format (e.g., P20m for 20 minutes or P30s for 30 seconds). This is useful when Teamscale starts analyzing at the same
-time this tool is called, and analysis is not yet finished. Default value is twenty minutes.
+format (e.g., PT20m for 20 minutes or PT30s for 30 seconds). This is useful when Teamscale starts analyzing at the same
+time this tool is called, and analysis is not yet finished. Default value is 20 minutes.
 
 **Exit codes**
 

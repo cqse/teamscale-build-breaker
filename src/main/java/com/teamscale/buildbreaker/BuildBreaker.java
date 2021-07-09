@@ -227,7 +227,7 @@ public class BuildBreaker implements Callable<Integer> {
 
     /** The duration to wait for Teamscale analysis of the commit to finish up. */
     @Option(names = {"--wait-for-analysis-timeout"}, paramLabel = "<iso-8601-duration>", required = false,
-            description = "The duration this tool will wait for analysis of the given commit to be finished in Teamscale, given in ISO-8601 format (e.g., P20m for 20 minutes or P30s for 30 seconds). This is useful when Teamscale starts analyzing at the same time this tool is called, and analysis is not yet finished. Default value is twenty minutes.")
+            description = "The duration this tool will wait for analysis of the given commit to be finished in Teamscale, given in ISO-8601 format (e.g., PT20m for 20 minutes or PT30s for 30 seconds). This is useful when Teamscale starts analyzing at the same time this tool is called, and analysis is not yet finished. Default value is 20 minutes.")
     public Duration waitForAnalysisTimeoutDuration = Duration.ofMinutes(20);
 
     @ArgGroup(exclusive = true)
