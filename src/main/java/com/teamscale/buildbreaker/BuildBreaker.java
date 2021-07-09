@@ -19,6 +19,7 @@ import okhttp3.Credentials;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
+import okhttp3.RequestBody;
 import okhttp3.Response;
 import org.conqat.lib.commons.string.StringUtils;
 import picocli.CommandLine;
@@ -230,6 +231,11 @@ public class BuildBreaker implements Callable<Integer> {
             description = "The duration this tool will wait for analysis of the given commit to be finished in Teamscale, given in ISO-8601 format (e.g., PT20m for 20 minutes or PT30s for 30 seconds). This is useful when Teamscale starts analyzing at the same time this tool is called, and analysis is not yet finished. Default value is 20 minutes.")
     public Duration waitForAnalysisTimeoutDuration = Duration.ofMinutes(20);
 
+    /** The URL of the remote repository used to send a commit hook event to Teamscale. */
+    @Option(names = {"--repository-url"}, paramLabel = "<remote-repository-url>", required = false,
+            description = "The URL of the remote repository where the analyzed commit originated. This is required in case a commit hook event should be sent to Teamscale for this repository if the repository URL cannot be established from the build environment.")
+    public String remoteRepositoryUrl;
+
     @ArgGroup(exclusive = true)
     private SslConnectionOptions sslConnectionOptions;
 
@@ -282,14 +288,21 @@ public class BuildBreaker implements Callable<Integer> {
 
         try {
             LocalDateTime timeout = LocalDateTime.now().plus(waitForAnalysisTimeoutDuration);
-            while (!isTeamscaleAnalysisFinished() && LocalDateTime.now().isBefore(timeout)) {
+            boolean teamscaleAnalysisFinished = isTeamscaleAnalysisFinished();
+            if (!teamscaleAnalysisFinished) {
+                System.out.println(
+                        "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Triggering Teamscale commit hook on repository.");
+                triggerCommitHookEvent();
+            }
+            while (!teamscaleAnalysisFinished && LocalDateTime.now().isBefore(timeout)) {
                 System.out.println(
                         "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Will retry in ten seconds until the timeout is reached at " +
                                 DateTimeFormatter.RFC_1123_DATE_TIME.format(timeout.atZone(ZoneOffset.UTC)) +
                                 ". You can change this timeout using --wait-for-analysis-timeout.");
                 Thread.sleep(Duration.ofSeconds(10).toMillis());
+                teamscaleAnalysisFinished = isTeamscaleAnalysisFinished();
             }
-            if (!isTeamscaleAnalysisFinished()) {
+            if (!teamscaleAnalysisFinished) {
                 throw new AnalysisNotFinishedException(
                         "The commit that should be evaluated was not analyzed by Teamscale in time before the analysis timeout.");
             }
@@ -336,6 +349,42 @@ public class BuildBreaker implements Callable<Integer> {
             client.connectionPool().evictAll();
         }
 
+    }
+
+    /**
+     * Notifies Teamscale that the repository has been updated. This means that analysis of the new commit will start
+     * promptly.
+     */
+    private void triggerCommitHookEvent() {
+        String repositoryUrl = determineRemoteRepositoryUrl();
+        if (StringUtils.isEmpty(repositoryUrl)) {
+            return;
+        }
+        HttpUrl.Builder builder = teamscaleServerUrl.newBuilder().addPathSegments("api/post-commit-hook")
+                .addQueryParameter("repository", repositoryUrl);
+        HttpUrl url = builder.build();
+        Request request = new Request.Builder().header("Authorization", Credentials.basic(user, accessKey)).url(url)
+                .post(RequestBody.create(null, new byte[]{})).build();
+        try {
+            sendRequest(url, request);
+            System.out.println("Commit hook triggered successfully.");
+        } catch (IOException e) {
+            System.out.println("Failure when trying to send the commit hook event to Teamscale: " + e);
+        }
+    }
+
+    private String determineRemoteRepositoryUrl() {
+        List<Supplier<String>> repoUrlDetectionStrategies =
+                List.of(() -> remoteRepositoryUrl, GitChecker::findRepoUrl, SvnChecker::findRepoUrl);
+        Optional<String> optionalUrl =
+                repoUrlDetectionStrategies.stream().map(Supplier::get).filter(Objects::nonNull).findFirst();
+        if (!optionalUrl.isPresent()) {
+            System.out.println(
+                    "Failed to automatically detect the remote repository URL. Please specify it manually via --repository-url to enable sending a commit hook event to Teamscale.");
+            return null;
+        }
+        remoteRepositoryUrl = optionalUrl.get();
+        return remoteRepositoryUrl;
     }
 
     private void initDefaultOptions() {
@@ -527,6 +576,16 @@ public class BuildBreaker implements Callable<Integer> {
     }
 
     private String detectCommit() {
+        List<Supplier<String>> commitDetectionStrategies =
+                List.of(() -> detectedCommit, EnvironmentVariableChecker::findCommit, GitChecker::findCommit,
+                        SvnChecker::findRevision);
+        Optional<String> optionalCommit =
+                commitDetectionStrategies.stream().map(Supplier::get).filter(Objects::nonNull).findFirst();
+        optionalCommit.ifPresent(commit -> detectedCommit = commit);
+        return detectedCommit;
+    }
+
+    private String detectRepoUrl() {
         List<Supplier<String>> commitDetectionStrategies =
                 List.of(() -> detectedCommit, EnvironmentVariableChecker::findCommit, GitChecker::findCommit,
                         SvnChecker::findRevision);

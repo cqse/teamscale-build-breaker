@@ -67,6 +67,10 @@ using this tool with self-signed certificates easier.
 **-o**, **--threshold-config**=*&lt;thresholdConfig&gt;*  
 The name of the threshold config that should be used.
 
+**--repository-url**=*&lt;remote-repository-url&gt;*  
+The URL of the remote repository where the analyzed commit originated. This is required in case a commit hook event
+should be sent to Teamscale for this repository if the repository URL cannot be established from the build environment.
+
 **-t**, **--evaluate-thresholds**  
 If this option is set, metrics from a given threshold profile will be evaluated.
 
