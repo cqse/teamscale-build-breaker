@@ -14,15 +14,16 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Set up GraalVM
-        uses: ayltai/setup-graalvm@v1
+        uses: graalvm/setup-graalvm@v1
         with:
-          java-version: 11
-          graalvm-version: 20.3.0
-          native-image: true
+          version: '22.0.0.2'
+          java-version: '11'
+          components: 'native-image'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build
         env:
           ACCESS_KEY: ${{ secrets.TEAMSCALE_ACCESS_KEY }}
-        run: mvn clean verify -Pfailsafe
+        run: ./mvnw clean verify -Pfailsafe
       - name: Reduce Image Size
         uses: crazy-max/ghaction-upx@v1
         with:
@@ -42,11 +43,12 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Set up GraalVM
-        uses: ayltai/setup-graalvm@v1
+        uses: graalvm/setup-graalvm@v1
         with:
-          java-version: 11
-          graalvm-version: 20.3.0
-          native-image: true
+          version: '22.0.0.2'
+          java-version: '11'
+          components: 'native-image'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build
         env:
           ACCESS_KEY: ${{ secrets.TEAMSCALE_ACCESS_KEY }}
