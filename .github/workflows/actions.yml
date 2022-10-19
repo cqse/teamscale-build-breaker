@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-shaded:
-    name: Build shaded jar
+    name: Build jar
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -21,7 +21,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v2
         with:
-          name: target-shaded
+          name: target-jar
           path: ./target
           retention-days: 5
 
@@ -94,13 +94,13 @@ jobs:
         run: |
           (cd ./target-linux && zip ../teamscale-buildbreaker-linux.zip ./teamscale-buildbreaker)
           (cd ./target-windows && zip ../teamscale-buildbreaker-windows.zip ./teamscale-buildbreaker.exe)
-          (cd ./target-shaded && cp ./teamscale-buildbreaker-*-shaded.jar ./teamscale-buildbreaker-shaded.jar)
+          (cd ./target-jar && cp ./teamscale-buildbreaker-*-shaded.jar ../teamscale-buildbreaker.jar)
       - name: Upload Release Assets
         id: create_release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ github.ref }}
-          file: teamscale-buildbreaker-*.{zip,jar}
+          file: teamscale-buildbreaker*.{zip,jar}
           file_glob: true
           overwrite: true
