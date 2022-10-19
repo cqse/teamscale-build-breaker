@@ -43,7 +43,7 @@ jobs:
           ACCESS_KEY: ${{ secrets.TEAMSCALE_ACCESS_KEY }}
         run: mvn clean verify -Pfailsafe -Pnative
       - name: Reduce Image Size
-        uses: crazy-max/ghaction-upx@v1
+        uses: crazy-max/ghaction-upx@v2
         with:
           version: latest
           files: |
@@ -73,7 +73,7 @@ jobs:
           ACCESS_KEY: ${{ secrets.TEAMSCALE_ACCESS_KEY }}
         run: ./build-windows.bat
       - name: Reduce Image Size
-        uses: crazy-max/ghaction-upx@v1
+        uses: crazy-max/ghaction-upx@v2
         with:
           version: latest
           files: |
