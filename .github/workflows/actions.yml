@@ -8,11 +8,30 @@ on:
     branches: '*'
 
 jobs:
+  build-jar:
+    name: Build jar
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout git
+        uses: actions/checkout@v3
+      - name: Build
+        env:
+          ACCESS_KEY: ${{ secrets.TEAMSCALE_ACCESS_KEY }}
+        run: mvn clean verify -Pfailsafe -Pshaded
+      - name: 'Upload Artifact'
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: target-jar
+          path: ./target
+          retention-days: 5
+
   build-linux:
     name: Linux Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout git
+        uses: actions/checkout@v3
       - name: Set up GraalVM
         uses: ayltai/setup-graalvm@v1
         with:
@@ -22,15 +41,16 @@ jobs:
       - name: Build
         env:
           ACCESS_KEY: ${{ secrets.TEAMSCALE_ACCESS_KEY }}
-        run: mvn clean verify -Pfailsafe
+        run: mvn clean verify -Pfailsafe -Pnative
       - name: Reduce Image Size
-        uses: crazy-max/ghaction-upx@v1
+        uses: crazy-max/ghaction-upx@v2
         with:
           version: latest
-          file: ./target/teamscale-buildbreaker
+          files: |
+            ./target/teamscale-buildbreaker
       - name: 'Upload Artifact'
         if: ${{ always() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: target-linux
           path: ./target
@@ -40,7 +60,8 @@ jobs:
     name: Windows Build
     runs-on: windows-2019
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout git
+        uses: actions/checkout@v3
       - name: Set up GraalVM
         uses: ayltai/setup-graalvm@v1
         with:
@@ -52,13 +73,14 @@ jobs:
           ACCESS_KEY: ${{ secrets.TEAMSCALE_ACCESS_KEY }}
         run: ./build-windows.bat
       - name: Reduce Image Size
-        uses: crazy-max/ghaction-upx@v1
+        uses: crazy-max/ghaction-upx@v2
         with:
           version: latest
-          file: ./target/teamscale-buildbreaker.exe
+          files: |
+            ./target/teamscale-buildbreaker.exe
       - name: 'Upload Artifact'
         if: ${{ always() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: target-windows
           path: ./target
@@ -69,6 +91,7 @@ jobs:
     needs:
       - build-windows
       - build-linux
+      - build-jar
     name: Create Release
     runs-on: ubuntu-latest
     steps:
@@ -77,12 +100,13 @@ jobs:
         run: |
           (cd ./target-linux && zip ../teamscale-buildbreaker-linux.zip ./teamscale-buildbreaker)
           (cd ./target-windows && zip ../teamscale-buildbreaker-windows.zip ./teamscale-buildbreaker.exe)
+          (cd ./target-jar && cp ./teamscale-buildbreaker-*-shaded.jar ../teamscale-buildbreaker.jar)
       - name: Upload Release Assets
         id: create_release
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ github.ref }}
-          file: teamscale-buildbreaker-*.zip
+          file: teamscale-buildbreaker*.{zip,jar}
           file_glob: true
           overwrite: true

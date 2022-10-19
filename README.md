@@ -170,5 +170,5 @@ necessary.
 
 - Make sure that maven is executed with the graalvm JDK
 - In the command line, navigate to the root directory of the project
-- Run ```mvn package```
+- Run ```mvn package -Pnative```
 - if build was successful, the new native image is located in the ```target``` subfolder of the project
