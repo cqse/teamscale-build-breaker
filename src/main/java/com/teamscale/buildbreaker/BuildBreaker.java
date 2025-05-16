@@ -65,6 +65,66 @@ public class BuildBreaker implements Callable<Integer> {
     @Spec
     static CommandSpec spec;
 
+    /**
+     * Validates that the given string follows the format BRANCH:TIMESTAMP.
+     * 
+     * @param branchAndTimestamp The branch and timestamp string to validate
+     * @param optionName The name of the option being validated (for error messages)
+     * @throws ParameterException if the format is invalid
+     */
+    static void validateBranchAndTimestamp(String branchAndTimestamp, String optionName) throws ParameterException {
+        if (StringUtils.isEmpty(branchAndTimestamp)) {
+            return;
+        }
+
+        String[] parts = branchAndTimestamp.split(":", 2);
+        if (parts.length == 1) {
+            throw new ParameterException(spec.commandLine(),
+                    "You specified an invalid branch and timestamp" + " with " + optionName + ": " +
+                            branchAndTimestamp + "\nYou must use the" +
+                            " format BRANCH:TIMESTAMP, where TIMESTAMP is a Unix timestamp in milliseconds" +
+                            " or the string 'HEAD' (to compare with the latest commit on that branch).");
+        }
+
+        String timestampPart = parts[1];
+        if (timestampPart.equalsIgnoreCase("HEAD")) {
+            return;
+        }
+
+        validateTimestamp(timestampPart, optionName);
+    }
+
+    /**
+     * Validates that the given string is a valid timestamp.
+     * 
+     * @param timestampPart The timestamp string to validate
+     * @param optionName The name of the option being validated (for error messages)
+     * @throws ParameterException if the timestamp is invalid
+     */
+    static void validateTimestamp(String timestampPart, String optionName) throws ParameterException {
+        try {
+            long unixTimestamp = Long.parseLong(timestampPart);
+            if (unixTimestamp < 10000000000L) {
+                String millisecondDate = DateTimeFormatter.RFC_1123_DATE_TIME
+                        .format(Instant.ofEpochMilli(unixTimestamp).atZone(ZoneOffset.UTC));
+                String secondDate = DateTimeFormatter.RFC_1123_DATE_TIME
+                        .format(Instant.ofEpochSecond(unixTimestamp).atZone(ZoneOffset.UTC));
+                throw new ParameterException(spec.commandLine(),
+                        "You specified an invalid timestamp with" + " " + optionName + ". The timestamp '" +
+                                timestampPart + "'" + " is equal to " + millisecondDate +
+                                ". This is probably not what" +
+                                " you intended. Most likely you specified the timestamp in seconds," +
+                                " instead of milliseconds. If you use " + timestampPart + "000" +
+                                " instead, it will mean " + secondDate);
+            }
+        } catch (NumberFormatException e) {
+            throw new ParameterException(spec.commandLine(), "You specified an invalid timestamp with" +
+                    " " + optionName + ". Expected either 'HEAD' or a unix timestamp" +
+                    " in milliseconds since 00:00:00 UTC Thursday, 1 January 1970, e.g." +
+                    " master:1606743774000\nInstead you used: " + timestampPart);
+        }
+    }
+
     /** The base URL of the Teamscale server */
     private HttpUrl teamscaleServerUrl;
 
@@ -119,6 +179,25 @@ public class BuildBreaker implements Callable<Integer> {
         @Option(names = {"--fail-on-modified-code-findings"},
                 description = "Fail on findings in modified code (not just new findings). Can only be used if --evaluate-findings is active.")
         public boolean failOnModified;
+
+        /** The target branch to compare with */
+        @Option(names = {"--target-branch"}, paramLabel = "<target-branch>",
+                description = "The target branch to compare with via Teamscale's delta service. " +
+                        "This allows comparing the current branch with a user provided target branch " +
+                        "instead of just looking at the last commit." +
+                        "\nFormat: BRANCH:TIMESTAMP" +
+                        "\nExample: master:1597845930000" +
+                        "\nExample: develop:HEAD")
+        public void setTargetBranch(String targetBranch) {
+            BuildBreaker.validateBranchAndTimestamp(targetBranch, "--target-branch");
+            this.targetBranch = targetBranch;
+        }
+
+        private String targetBranch;
+
+        public String getTargetBranch() {
+            return targetBranch;
+        }
     }
 
     /** The username of the Teamscale user performing the query */
@@ -144,7 +223,7 @@ public class BuildBreaker implements Callable<Integer> {
                         " the latest revision on that branch." + "\nFormat: BRANCH:TIMESTAMP" +
                         "\nExample: master:1597845930000" + "\nExample: develop:HEAD")
         public void setBranchAndTimestamp(String branchAndTimestamp) {
-            validateBranchAndTimestamp(branchAndTimestamp);
+            BuildBreaker.validateBranchAndTimestamp(branchAndTimestamp, "--branch-and-timestamp");
             this.branchAndTimestamp = branchAndTimestamp;
         }
 
@@ -154,52 +233,6 @@ public class BuildBreaker implements Callable<Integer> {
                         " This is typically the commit that the current CI pipeline is building." +
                         " Can be either a Git SHA1, a SVN revision number or a Team Foundation changeset ID.")
         private String commit;
-
-        private void validateBranchAndTimestamp(String branchAndTimestamp) throws ParameterException {
-            if (StringUtils.isEmpty(branchAndTimestamp)) {
-                return;
-            }
-
-            String[] parts = branchAndTimestamp.split(":", 2);
-            if (parts.length == 1) {
-                throw new ParameterException(spec.commandLine(),
-                        "You specified an invalid branch and timestamp" + " with --branch-and-timestamp: " +
-                                branchAndTimestamp + "\nYou must  use the" +
-                                " format BRANCH:TIMESTAMP, where TIMESTAMP is a Unix timestamp in milliseconds" +
-                                " or the string 'HEAD' (to upload to the latest commit on that branch).");
-            }
-
-            String timestampPart = parts[1];
-            if (timestampPart.equalsIgnoreCase("HEAD")) {
-                return;
-            }
-
-            validateTimestamp(timestampPart);
-        }
-
-        private void validateTimestamp(String timestampPart) throws ParameterException {
-            try {
-                long unixTimestamp = Long.parseLong(timestampPart);
-                if (unixTimestamp < 10000000000L) {
-                    String millisecondDate = DateTimeFormatter.RFC_1123_DATE_TIME
-                            .format(Instant.ofEpochMilli(unixTimestamp).atZone(ZoneOffset.UTC));
-                    String secondDate = DateTimeFormatter.RFC_1123_DATE_TIME
-                            .format(Instant.ofEpochSecond(unixTimestamp).atZone(ZoneOffset.UTC));
-                    throw new ParameterException(spec.commandLine(),
-                            "You specified an invalid timestamp with" + " --branch-and-timestamp. The timestamp '" +
-                                    timestampPart + "'" + " is equal to " + millisecondDate +
-                                    ". This is probably not what" +
-                                    " you intended. Most likely you specified the timestamp in seconds," +
-                                    " instead of milliseconds. If you use " + timestampPart + "000" +
-                                    " instead, it will mean " + secondDate);
-                }
-            } catch (NumberFormatException e) {
-                throw new ParameterException(spec.commandLine(), "You specified an invalid timestamp with" +
-                        " --branch-and-timestamp. Expected either 'HEAD' or a unix timestamp" +
-                        " in milliseconds since 00:00:00 UTC Thursday, 1 January 1970, e.g." +
-                        " master:1606743774000\nInstead you used: " + timestampPart);
-            }
-        }
     }
 
     private OkHttpClient client;
@@ -331,8 +364,17 @@ public class BuildBreaker implements Callable<Integer> {
                 aggregatedResult.addAll(findingsResult);
                 System.out.println(findingsResult);
                 if (findingsResult.toStatusCode() > 0) {
-                    HttpUrl.Builder urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("activity.html")
-                            .fragment("details/" + project + "?t=" + determineBranchAndTimestamp());
+                    HttpUrl.Builder urlBuilder;
+                    if (findingEvalOptions.getTargetBranch() != null) {
+                        // For delta comparison, use the delta view
+                        urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta.html")
+                                .fragment("/" + project + "?t1=" + findingEvalOptions.getTargetBranch() + 
+                                        "&t2=" + determineBranchAndTimestamp());
+                    } else {
+                        // For single commit evaluation, use the activity view
+                        urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("activity.html")
+                                .fragment("details/" + project + "?t=" + determineBranchAndTimestamp());
+                    }
                     System.out.println(
                             "More detailed information about these findings is available in Teamscale's web interface at " +
                                     urlBuilder.build());
@@ -429,10 +471,33 @@ public class BuildBreaker implements Callable<Integer> {
     }
 
     private String fetchFindings() throws IOException {
+        if (findingEvalOptions.getTargetBranch() != null) {
+            return fetchFindingsDelta();
+        } else {
+            return fetchFindingsChurn();
+        }
+    }
+
+    private String fetchFindingsChurn() throws IOException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
                         .addPathSegments("finding-churn/list");
         addRevisionOrBranchTimestamp(builder);
+        HttpUrl url = builder.build();
+        Request request = createAuthenticatedGetRequest(url);
+        return sendRequest(url, request);
+    }
+
+    private String fetchFindingsDelta() throws IOException {
+        HttpUrl.Builder builder =
+                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
+                        .addPathSegments("findings/delta");
+
+        // Add the target branch as t1 (start) parameter and current branch/timestamp as t2 (end) parameter
+        String currentBranchAndTimestamp = determineBranchAndTimestamp();
+        builder.addQueryParameter("t1", findingEvalOptions.getTargetBranch());
+        builder.addQueryParameter("t2", currentBranchAndTimestamp);
+
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         return sendRequest(url, request);
@@ -653,4 +718,3 @@ public class BuildBreaker implements Callable<Integer> {
                 OkHttpClientUtils.readBodySafe(response));
     }
 }
-

@@ -15,6 +15,19 @@ and the program exits with a non-zero, negative status code.
 Use this in your CI pipeline to break the build when a non-zero status code is detected. If you want to keep the build
 running in case of internal errors, only break the build on positive status codes.
 
+### Branch Comparison with Delta Service
+
+By default, the build breaker evaluates findings introduced in the last commit. With the **--target-branch** option, you can
+compare the current branch with a target branch using Teamscale's delta service. This allows you to see all findings
+introduced between the target branch and your current branch, which is useful for pull request validation.
+
+Example:
+```
+teamscale-buildbreaker --server https://teamscale.example.com --user myuser --accesskey myaccesskey --project myproject --evaluate-findings --target-branch main
+```
+
+This will compare your current branch with the 'main' branch and report any findings introduced in your branch.
+
 ### Required Parameters
 
 **-p**, **--project**=*&lt;project&gt;*  
@@ -56,6 +69,9 @@ Whether to fail on yellow findings (with exit code 2).
 
 **--fail-on-yellow-metrics**  
 Whether to fail on yellow metrics (with exit code 2).
+
+**--target-branch**=*&lt;target-branch&gt;*  
+The target branch to compare with via Teamscale's delta service. This allows comparing the current branch with a user provided target branch instead of just looking at the last commit. Can only be used if --evaluate-findings is active.
 
 **-h**, **--help**  
 Show this help message and exit.
@@ -115,7 +131,7 @@ To use this tool in a Jenkins pipeline, complete the following steps:
 
        pipeline {
           agent any
-          
+
           stages {
               stage ('Teamscale Analysis') {
                   steps {

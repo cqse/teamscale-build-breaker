@@ -9,7 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Evaluates a finding JSON string (corresponds to Teamscale type FindingChurnList). */
+/** Evaluates a finding JSON string (corresponds to Teamscale type FindingChurnList or ExtendedFindingDelta). */
 public class FindingsEvaluator {
 
     public EvaluationResult evaluate(String findingsJson, boolean failOnYellowFindings, boolean includeChangedCode) {
@@ -17,12 +17,37 @@ public class FindingsEvaluator {
         if (StringUtils.isEmpty(findingsJson)) {
             return evaluationResult;
         }
+
         DocumentContext findings = JsonPath.parse(findingsJson);
-        List<Map<String, Object>> findingsToEvaluate = findings.read("$..addedFindings.*");
-        if (includeChangedCode) {
-            List<Map<String, Object>> findingsInChangedCode = findings.read("$..findingsInChangedCode.*");
-            findingsToEvaluate.addAll(findingsInChangedCode);
+        List<Map<String, Object>> findingsToEvaluate = new java.util.ArrayList<>();
+
+        // Try to parse as FindingChurnList (from finding-churn/list API)
+        try {
+            List<Map<String, Object>> addedFindings = findings.read("$..addedFindings.*");
+            findingsToEvaluate.addAll(addedFindings);
+
+            if (includeChangedCode) {
+                List<Map<String, Object>> findingsInChangedCode = findings.read("$..findingsInChangedCode.*");
+                findingsToEvaluate.addAll(findingsInChangedCode);
+            }
+        } catch (Exception e) {
+            // If parsing as FindingChurnList fails, try parsing as ExtendedFindingDelta (from findings/delta API)
+            try {
+                List<Map<String, Object>> addedFindings = findings.read("$.addedFindings.*");
+                findingsToEvaluate.addAll(addedFindings);
+
+                if (includeChangedCode) {
+                    List<Map<String, Object>> findingsInChangedCode = findings.read("$.findingsInChangedCode.*");
+                    findingsToEvaluate.addAll(findingsInChangedCode);
+                }
+            } catch (Exception ex) {
+                throw new BuildBreakerInternalException(
+                        "Could not parse JSON response as either FindingChurnList or ExtendedFindingDelta:\n" + 
+                        findingsJson + "\n\nPlease contact CQSE with an error report.",
+                        ex);
+            }
         }
+
         try {
             for (Map<String, Object> finding : findingsToEvaluate) {
                 Map<String, String> location = (Map<String, String>) finding.getOrDefault("location", new HashMap<>());
