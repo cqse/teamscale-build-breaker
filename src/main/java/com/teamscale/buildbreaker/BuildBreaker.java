@@ -58,7 +58,8 @@ import java.util.regex.Pattern;
                 " If automatic detection fails, you can manually specify either a commit via --commit, or" +
                 " a branch and timestamp via --branch-and-timestamp.\nIntroduction of new findings can only be evaluated when" +
                 " a specific commit is given, but threshold evaluation can also be performed on the current version of a branch by using" +
-                " --branch-and-timestamp my-branch:HEAD.")
+                " --branch-and-timestamp my-branch:HEAD.\nYou can also compare the current branch with a target branch using" +
+                " --target-branch to evaluate findings between branches instead of just for a single commit.")
 public class BuildBreaker implements Callable<Integer> {
 
     /** The command spec models how this executable can be called. It is automatically injected by PicoCli. */
@@ -100,26 +101,31 @@ public class BuildBreaker implements Callable<Integer> {
         public boolean failOnYellowMetrics;
     }
 
-    /** Whether to evaluate findings, and detail options for that evaluation */
-    @ArgGroup(exclusive = false)
-    private FindingEvalOptions findingEvalOptions;
+/** Whether to evaluate findings, and detail options for that evaluation */
+@ArgGroup(exclusive = false)
+private FindingEvalOptions findingEvalOptions;
 
-    public static class FindingEvalOptions {
-        /** Whether to evaluate findings */
-        @Option(names = {"-f", "--evaluate-findings"}, required = true,
-                description = "If this option is set, findings introduced with the given commit will be evaluated.")
-        public boolean evaluateFindings;
+public static class FindingEvalOptions {
+    /** Whether to evaluate findings */
+    @Option(names = {"-f", "--evaluate-findings"}, required = true,
+            description = "If this option is set, findings introduced with the given commit will be evaluated.")
+    public boolean evaluateFindings;
 
-        /** Whether to fail on yellow findings */
-        @Option(names = {"--fail-on-yellow-findings"},
-                description = "Whether to fail on yellow findings (with exit code 2). Can only be used if --evaluate-findings is active.")
-        public boolean failOnYellowFindings;
+    /** Whether to fail on yellow findings */
+    @Option(names = {"--fail-on-yellow-findings"},
+            description = "Whether to fail on yellow findings (with exit code 2). Can only be used if --evaluate-findings is active.")
+    public boolean failOnYellowFindings;
 
-        /** Whether to fail on findings in modified code */
-        @Option(names = {"--fail-on-modified-code-findings"},
-                description = "Fail on findings in modified code (not just new findings). Can only be used if --evaluate-findings is active.")
-        public boolean failOnModified;
-    }
+    /** Whether to fail on findings in modified code */
+    @Option(names = {"--fail-on-modified-code-findings"},
+            description = "Fail on findings in modified code (not just new findings). Can only be used if --evaluate-findings is active.")
+    public boolean failOnModified;
+    
+    /** The target branch to compare with */
+    @Option(names = {"--target-branch"},
+            description = "The target branch to compare with using Teamscale's delta service. If specified, findings will be evaluated by comparing the current branch with this target branch.")
+    public String targetBranch;
+}
 
     /** The username of the Teamscale user performing the query */
     private String user;
@@ -323,16 +329,36 @@ public class BuildBreaker implements Callable<Integer> {
             }
 
             if (findingEvalOptions.evaluateFindings) {
-                System.out.println("Evaluating findings...");
+                if (StringUtils.isEmpty(findingEvalOptions.targetBranch)) {
+                    System.out.println("Evaluating findings for the current commit...");
+                } else {
+                    System.out.println("Evaluating findings by comparing the current branch with target branch '" + 
+                            findingEvalOptions.targetBranch + "'...");
+                }
+                
                 String findingAssessments = fetchFindings();
                 EvaluationResult findingsResult = new FindingsEvaluator()
                         .evaluate(findingAssessments, findingEvalOptions.failOnYellowFindings,
                                 findingEvalOptions.failOnModified);
                 aggregatedResult.addAll(findingsResult);
                 System.out.println(findingsResult);
+                
                 if (findingsResult.toStatusCode() > 0) {
-                    HttpUrl.Builder urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("activity.html")
-                            .fragment("details/" + project + "?t=" + determineBranchAndTimestamp());
+                    HttpUrl.Builder urlBuilder;
+                    
+                    if (StringUtils.isEmpty(findingEvalOptions.targetBranch)) {
+                        // For single commit evaluation, link to activity.html
+                        urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("activity.html")
+                                .fragment("details/" + project + "?t=" + determineBranchAndTimestamp());
+                    } else {
+                        // For branch comparison, link to delta.html
+                        String currentBranchAndTimestamp = determineBranchAndTimestamp();
+                        String targetBranchAndTimestamp = findingEvalOptions.targetBranch + ":HEAD";
+                        urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta.html")
+                                .fragment("/" + project + "?t1=" + targetBranchAndTimestamp + 
+                                        "&t2=" + currentBranchAndTimestamp);
+                    }
+                    
                     System.out.println(
                             "More detailed information about these findings is available in Teamscale's web interface at " +
                                     urlBuilder.build());
@@ -428,11 +454,81 @@ public class BuildBreaker implements Callable<Integer> {
         }
     }
 
+    /**
+     * Fetches findings from Teamscale based on the configuration.
+     * <p>
+     * This method determines which endpoint to use based on whether a target branch is specified:
+     * <ul>
+     *   <li>If no target branch is specified, it uses the finding-churn/list endpoint to get findings for a specific commit</li>
+     *   <li>If a target branch is specified, it uses the findings/delta endpoint to compare branches</li>
+     * </ul>
+     * 
+     * @return The JSON response containing the findings
+     * @throws IOException If there's an error communicating with the Teamscale server
+     */
     private String fetchFindings() throws IOException {
+        if (StringUtils.isEmpty(findingEvalOptions.targetBranch)) {
+            // Use the original finding-churn/list endpoint when no target branch is specified
+            return fetchFindingsUsingChurnList();
+        } else {
+            // Use the delta service when a target branch is specified
+            return fetchFindingsUsingDeltaService();
+        }
+    }
+
+    /**
+     * Fetches findings using the original finding-churn/list endpoint.
+     * <p>
+     * This method uses Teamscale's finding-churn/list endpoint to get findings for a specific commit.
+     * It retrieves findings that were added or modified in the specified commit.
+     * 
+     * @return The JSON response from the finding-churn/list endpoint containing the findings
+     * @throws IOException If there's an error communicating with the Teamscale server
+     */
+    private String fetchFindingsUsingChurnList() throws IOException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
                         .addPathSegments("finding-churn/list");
         addRevisionOrBranchTimestamp(builder);
+        HttpUrl url = builder.build();
+        Request request = createAuthenticatedGetRequest(url);
+        return sendRequest(url, request);
+    }
+
+    /**
+     * Fetches findings using the delta service to compare with a target branch.
+     * <p>
+     * This method uses Teamscale's delta service to compare the current branch/commit with a target branch.
+     * It sets up the API call with the appropriate parameters:
+     * <ul>
+     *   <li>t1: The target branch with HEAD timestamp (starting point for comparison)</li>
+     *   <li>t2: The current branch and timestamp (endpoint for comparison)</li>
+     *   <li>uniform-path: Empty string to include all paths</li>
+     * </ul>
+     * The delta service returns findings that were added, removed, or changed between the two branches.
+     * 
+     * @return The JSON response from the delta service containing the finding differences
+     * @throws IOException If there's an error communicating with the Teamscale server
+     */
+    private String fetchFindingsUsingDeltaService() throws IOException {
+        String branchAndTimestampString = determineBranchAndTimestamp();
+        String[] branchAndTimestamp = branchAndTimestampString.split(":", 2);
+        String currentBranch = branchAndTimestamp[0];
+        String currentTimestamp = branchAndTimestamp[1];
+
+        HttpUrl.Builder builder =
+                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
+                        .addPathSegments("findings/delta");
+        
+        // Add the current branch and timestamp as the end point (t2)
+        builder.addQueryParameter("t2", branchAndTimestampString);
+        
+        // Add the target branch as the start point (t1)
+        builder.addQueryParameter("t1", findingEvalOptions.targetBranch + ":HEAD");
+        
+        // Add uniform path parameter (empty for root)
+        builder.addQueryParameter("uniform-path", "");
+        
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         return sendRequest(url, request);
@@ -653,4 +749,3 @@ public class BuildBreaker implements Callable<Integer> {
                 OkHttpClientUtils.readBodySafe(response));
     }
 }
-

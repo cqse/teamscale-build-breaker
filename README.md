@@ -49,10 +49,14 @@ current CI pipeline is building. Can be either a Git SHA1, a SVN revision number
 If this option is set, findings introduced with the given commit will be evaluated.
 
 **--fail-on-modified-code-findings**  
-Whether to on findings in modified code (not just new findings).
+Whether to fail on findings in modified code (not just new findings).
 
 **--fail-on-yellow-findings**  
 Whether to fail on yellow findings (with exit code 2).
+
+**--target-branch**=*&lt;branch-name&gt;*  
+The target branch to compare with using Teamscale's delta service. If specified, findings will be evaluated by comparing
+the current branch with this target branch instead of just evaluating findings introduced in the current commit.
 
 **--fail-on-yellow-metrics**  
 Whether to fail on yellow metrics (with exit code 2).
