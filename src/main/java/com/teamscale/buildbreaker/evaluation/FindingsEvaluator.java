@@ -30,23 +30,10 @@ public class FindingsEvaluator {
         }
 
         DocumentContext findings = JsonPath.parse(findingsJson);
-        List<Map<String, Object>> findingsToEvaluate = new ArrayList<>();
 
-        // Try to determine if this is a delta service response or a finding-churn/list response
-        boolean isDeltaServiceResponse = isDeltaServiceResponse(findings);
-
-        if (isDeltaServiceResponse) {
-            // Handle delta service response format
-            findingsToEvaluate.addAll(getAddedFindingsFromDeltaService(findings));
-            if (includeChangedCode) {
-                findingsToEvaluate.addAll(getChangedFindingsFromDeltaService(findings));
-            }
-        } else {
-            // Handle finding-churn/list response format
-            findingsToEvaluate.addAll(getAddedFindingsFromChurnList(findings));
-            if (includeChangedCode) {
-                findingsToEvaluate.addAll(getChangedFindingsFromChurnList(findings));
-            }
+        List<Map<String, Object>> findingsToEvaluate = new ArrayList<>(getAddedFindingsFromChurnList(findings));
+        if (includeChangedCode) {
+            findingsToEvaluate.addAll(getChangedFindingsFromChurnList(findings));
         }
 
         try {
@@ -68,41 +55,6 @@ public class FindingsEvaluator {
                     e);
         }
         return evaluationResult;
-    }
-
-    /**
-     * Determines if the JSON response is from the delta service or the finding-churn/list endpoint.
-     */
-    private boolean isDeltaServiceResponse(DocumentContext findings) {
-        try {
-            // Check for a structure that's unique to the delta service response
-            findings.read("$.addedFindings");
-            return true;
-        } catch (PathNotFoundException e) {
-            return false;
-        }
-    }
-
-    /**
-     * Gets added findings from the delta service response.
-     */
-    private List<Map<String, Object>> getAddedFindingsFromDeltaService(DocumentContext findings) {
-        try {
-            return findings.read("$.addedFindings.*");
-        } catch (PathNotFoundException e) {
-            return new ArrayList<>();
-        }
-    }
-
-    /**
-     * Gets findings in changed code from the delta service response.
-     */
-    private List<Map<String, Object>> getChangedFindingsFromDeltaService(DocumentContext findings) {
-        try {
-            return findings.read("$.findingsInChangedCode.*");
-        } catch (PathNotFoundException e) {
-            return new ArrayList<>();
-        }
     }
 
     /**

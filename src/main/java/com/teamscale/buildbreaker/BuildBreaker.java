@@ -120,7 +120,7 @@ public static class FindingEvalOptions {
     @Option(names = {"--fail-on-modified-code-findings"},
             description = "Fail on findings in modified code (not just new findings). Can only be used if --evaluate-findings is active.")
     public boolean failOnModified;
-    
+
     /** The target branch to compare with */
     @Option(names = {"--target-branch"},
             description = "The target branch to compare with using Teamscale's delta service. If specified, findings will be evaluated by comparing the current branch with this target branch.")
@@ -332,33 +332,39 @@ public static class FindingEvalOptions {
                 if (StringUtils.isEmpty(findingEvalOptions.targetBranch)) {
                     System.out.println("Evaluating findings for the current commit...");
                 } else {
-                    System.out.println("Evaluating findings by comparing the current branch with target branch '" + 
+                    System.out.println("Evaluating findings by comparing the current branch with target branch '" +
                             findingEvalOptions.targetBranch + "'...");
                 }
-                
+
                 String findingAssessments = fetchFindings();
                 EvaluationResult findingsResult = new FindingsEvaluator()
                         .evaluate(findingAssessments, findingEvalOptions.failOnYellowFindings,
                                 findingEvalOptions.failOnModified);
                 aggregatedResult.addAll(findingsResult);
                 System.out.println(findingsResult);
-                
+
                 if (findingsResult.toStatusCode() > 0) {
                     HttpUrl.Builder urlBuilder;
-                    
+
                     if (StringUtils.isEmpty(findingEvalOptions.targetBranch)) {
                         // For single commit evaluation, link to activity.html
                         urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("activity.html")
                                 .fragment("details/" + project + "?t=" + determineBranchAndTimestamp());
                     } else {
-                        // For branch comparison, link to delta.html
-                        String currentBranchAndTimestamp = determineBranchAndTimestamp();
+                        // For branch comparison, link to delta
+                        String sourceBranchHead = calculateCurrentBranchHeadCommitDescriptor();
                         String targetBranchAndTimestamp = findingEvalOptions.targetBranch + ":HEAD";
-                        urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta.html")
-                                .fragment("/" + project + "?t1=" + targetBranchAndTimestamp + 
-                                        "&t2=" + currentBranchAndTimestamp);
+                        urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta")
+                                .addPathSegment("findings")
+                                .addPathSegment(project)
+                                .addQueryParameter("from", sourceBranchHead)
+                                .addQueryParameter("to", targetBranchAndTimestamp)
+                                .addQueryParameter("showMergeFindings", "true")
+                                .addQueryParameter("finding-section", "1") // Show red findings section
+                                .addQueryParameter("filter-option", "EXCLUDED"); // Hide flagged findings
+
                     }
-                    
+
                     System.out.println(
                             "More detailed information about these findings is available in Teamscale's web interface at " +
                                     urlBuilder.build());
@@ -375,6 +381,12 @@ public static class FindingEvalOptions {
             client.connectionPool().evictAll();
         }
 
+    }
+
+    private String calculateCurrentBranchHeadCommitDescriptor() throws IOException {
+        String currentBranchAndTimestamp = determineBranchAndTimestamp();
+        String[] split = currentBranchAndTimestamp.split(":", 2);
+        return split[0] + ":HEAD";
     }
 
     /**
@@ -462,7 +474,7 @@ public static class FindingEvalOptions {
      *   <li>If no target branch is specified, it uses the finding-churn/list endpoint to get findings for a specific commit</li>
      *   <li>If a target branch is specified, it uses the findings/delta endpoint to compare branches</li>
      * </ul>
-     * 
+     *
      * @return The JSON response containing the findings
      * @throws IOException If there's an error communicating with the Teamscale server
      */
@@ -481,7 +493,7 @@ public static class FindingEvalOptions {
      * <p>
      * This method uses Teamscale's finding-churn/list endpoint to get findings for a specific commit.
      * It retrieves findings that were added or modified in the specified commit.
-     * 
+     *
      * @return The JSON response from the finding-churn/list endpoint containing the findings
      * @throws IOException If there's an error communicating with the Teamscale server
      */
@@ -506,29 +518,20 @@ public static class FindingEvalOptions {
      *   <li>uniform-path: Empty string to include all paths</li>
      * </ul>
      * The delta service returns findings that were added, removed, or changed between the two branches.
-     * 
+     *
      * @return The JSON response from the delta service containing the finding differences
      * @throws IOException If there's an error communicating with the Teamscale server
      */
     private String fetchFindingsUsingDeltaService() throws IOException {
-        String branchAndTimestampString = determineBranchAndTimestamp();
-        String[] branchAndTimestamp = branchAndTimestampString.split(":", 2);
-        String currentBranch = branchAndTimestamp[0];
-        String currentTimestamp = branchAndTimestamp[1];
+        String currentBranchHead = calculateCurrentBranchHeadCommitDescriptor();
 
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
-                        .addPathSegments("findings/delta");
-        
-        // Add the current branch and timestamp as the end point (t2)
-        builder.addQueryParameter("t2", branchAndTimestampString);
-        
-        // Add the target branch as the start point (t1)
-        builder.addQueryParameter("t1", findingEvalOptions.targetBranch + ":HEAD");
-        
-        // Add uniform path parameter (empty for root)
-        builder.addQueryParameter("uniform-path", "");
-        
+                        .addPathSegments("merge-requests/finding-churn");
+
+        builder.addQueryParameter("source", currentBranchHead);
+        builder.addQueryParameter("target", findingEvalOptions.targetBranch + ":HEAD");
+
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         return sendRequest(url, request);
