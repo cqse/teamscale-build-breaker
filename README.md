@@ -74,6 +74,9 @@ should be sent to Teamscale for this repository if the repository URL cannot be 
 **-t**, **--evaluate-thresholds**  
 If this option is set, metrics from a given threshold profile will be evaluated.
 
+**--uniform-path**
+Set this option to evaluate the threshold only to a subset of metrics.
+
 **--trusted-keystore**=*&lt;keystore-path;password&gt;*  
 A Java KeyStore file and its corresponding password. The KeyStore contains additional certificates that should be
 trusted when performing SSL requests. Separate the path from the password with a semicolon, e.g:

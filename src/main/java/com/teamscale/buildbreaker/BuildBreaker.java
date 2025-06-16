@@ -94,6 +94,11 @@ public class BuildBreaker implements Callable<Integer> {
                 description = "The name of the threshold config that should be used. Needs to be set if --evaluate-thresholds is active.")
         public String thresholdConfig;
 
+		/** To get Metrics for a subpath of the project */
+		@Option(names = {"--uniform-path"}, defaultValue = "",
+			description = "Uniform path of requested file or directory. Can only be used if --evaluate-thresholds is active.")
+		public String uniformPath;
+
         /** Whether to fail on yellow metrics */
         @Option(names = {"--fail-on-yellow-metrics"},
                 description = "Whether to fail on yellow metrics (with exit code 2). Can only be used if --evaluate-thresholds is active.")
@@ -277,7 +282,7 @@ public class BuildBreaker implements Callable<Integer> {
     @Override
     public Integer call() throws Exception {
         initDefaultOptions();
-        if (!findingEvalOptions.evaluateFindings && !thresholdEvalOptions.failOnYellowMetrics) {
+        if (!findingEvalOptions.evaluateFindings && !thresholdEvalOptions.evaluateThresholds) {
             throw new InvalidParametersException(
                     "Please specify at least one of --evaluate-findings or --evaluate-thresholds, otherwise no evaluation will take place.");
         }
@@ -315,7 +320,7 @@ public class BuildBreaker implements Callable<Integer> {
                 System.out.println(metricResult);
                 if (metricResult.toStatusCode() > 0) {
                     HttpUrl.Builder urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("metrics.html")
-                            .fragment("/" + project + "?t=" + determineBranchAndTimestamp());
+                            .fragment("/" + project + thresholdEvalOptions.uniformPath + "?t=" + determineBranchAndTimestampExtraMillis());
                     System.out.println(
                             "More detailed information about these metrics is available in Teamscale's web interface at " +
                                     urlBuilder.build());
@@ -332,7 +337,7 @@ public class BuildBreaker implements Callable<Integer> {
                 System.out.println(findingsResult);
                 if (findingsResult.toStatusCode() > 0) {
                     HttpUrl.Builder urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("activity.html")
-                            .fragment("details/" + project + "?t=" + determineBranchAndTimestamp());
+                            .fragment("details/" + project + "?t=" + determineBranchAndTimestampExtraMillis());
                     System.out.println(
                             "More detailed information about these findings is available in Teamscale's web interface at " +
                                     urlBuilder.build());
@@ -441,7 +446,8 @@ public class BuildBreaker implements Callable<Integer> {
     private String fetchMetricAssessments() throws IOException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
-                        .addPathSegment("metric-assessments").addQueryParameter("uniform-path", "")
+                        .addPathSegment("metric-assessments")
+						.addQueryParameter("uniform-path", thresholdEvalOptions.uniformPath)
                         .addQueryParameter("configuration-name", thresholdEvalOptions.thresholdConfig);
         addRevisionOrBranchTimestamp(builder);
         HttpUrl url = builder.build();
@@ -474,7 +480,7 @@ public class BuildBreaker implements Callable<Integer> {
      * We track revision or branch:timestamp for the session as it should be the same for all uploads.
      */
     private void addRevisionOrBranchTimestamp(HttpUrl.Builder builder) throws IOException {
-        builder.addQueryParameter("t", determineBranchAndTimestamp());
+        builder.addQueryParameter("t", determineBranchAndTimestampExtraMillis());
     }
 
     private String determineBranchAndTimestamp() throws IOException {
@@ -494,6 +500,19 @@ public class BuildBreaker implements Callable<Integer> {
             return fetchTimestampForRevision(commit);
         }
     }
+
+	/**
+	 * External Uploads to Teamscale add a minor amount of milliseconds (about 20) to the timestamp of the commit the upload is for.
+	 * We want to check the state after external uploads and therefore have to add milliseconds to the timestamp. Weird.
+	 * @return
+	 */
+	private String determineBranchAndTimestampExtraMillis() throws IOException {
+		String t = determineBranchAndTimestamp();
+		StringBuilder builder = new StringBuilder(t);
+		builder.setCharAt(t.length() - 3, '5');
+		return builder.toString();
+	}
+
 
     private String fetchTimestampForRevision(String revision) throws IOException {
         if (timestampRevisionCache.containsKey(revision)) {
