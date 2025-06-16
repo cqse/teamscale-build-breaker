@@ -62,84 +62,131 @@ import java.util.regex.Pattern;
                 " --target-branch to evaluate findings between branches instead of just for a single commit.")
 public class BuildBreaker implements Callable<Integer> {
 
-    /** The command spec models how this executable can be called. It is automatically injected by PicoCli. */
+    /**
+     * The command spec models how this executable can be called. It is automatically injected by PicoCli.
+     */
     @Spec
     static CommandSpec spec;
 
-    /** The base URL of the Teamscale server */
+    /**
+     * The base URL of the Teamscale server
+     */
     private HttpUrl teamscaleServerUrl;
 
-    /** The ID or alias of the Teamscale project */
+    /**
+     * The ID or alias of the Teamscale project
+     */
     @Option(names = {"-p", "--project"}, required = true,
             description = "The project ID or alias (NOT the project name!) relevant for the analysis.")
     private String project;
 
-    /** Whether to evaluate thresholds, and detail options for that evaluation */
+    /**
+     * Whether to evaluate thresholds, and detail options for that evaluation
+     */
     @ArgGroup(exclusive = false)
     private ThresholdEvalOptions thresholdEvalOptions;
 
-    /** Caches already fetched mappings from revisions to corresponding timestamps. */
+    /**
+     * Caches already fetched mappings from revisions to corresponding timestamps.
+     */
     Map<String, String> timestampRevisionCache = new HashMap<>();
 
-    /** Caches the commit which should be analyzed. */
+    /**
+     * Caches the commit which should be analyzed.
+     */
     String detectedCommit = null;
 
     public static class ThresholdEvalOptions {
-        /** Whether to evaluate thresholds */
+        /**
+         * Whether to evaluate thresholds
+         */
         @Option(names = {"-t", "--evaluate-thresholds"}, required = true,
                 description = "If this option is set, metrics from a given threshold profile will be evaluated.")
         public boolean evaluateThresholds;
 
-        /** The threshold config to use */
+        /**
+         * The threshold config to use
+         */
         @Option(names = {"-o", "--threshold-config"}, required = true,
                 description = "The name of the threshold config that should be used. Needs to be set if --evaluate-thresholds is active.")
         public String thresholdConfig;
 
-        /** Whether to fail on yellow metrics */
+        /**
+         * Whether to fail on yellow metrics
+         */
         @Option(names = {"--fail-on-yellow-metrics"},
                 description = "Whether to fail on yellow metrics (with exit code 2). Can only be used if --evaluate-thresholds is active.")
         public boolean failOnYellowMetrics;
     }
 
-/** Whether to evaluate findings, and detail options for that evaluation */
-@ArgGroup(exclusive = false)
-private FindingEvalOptions findingEvalOptions;
+    /**
+     * Whether to evaluate findings, and detail options for that evaluation
+     */
+    @ArgGroup(exclusive = false)
+    private FindingEvalOptions findingEvalOptions;
 
-public static class FindingEvalOptions {
-    /** Whether to evaluate findings */
-    @Option(names = {"-f", "--evaluate-findings"}, required = true,
-            description = "If this option is set, findings introduced with the given commit will be evaluated.")
-    public boolean evaluateFindings;
+    public static class FindingEvalOptions {
+        /**
+         * Whether to evaluate findings
+         */
+        @Option(names = {"-f", "--evaluate-findings"}, required = true,
+                description = "If this option is set, findings introduced with the given commit will be evaluated.")
+        public boolean evaluateFindings;
 
-    /** Whether to fail on yellow findings */
-    @Option(names = {"--fail-on-yellow-findings"},
-            description = "Whether to fail on yellow findings (with exit code 2). Can only be used if --evaluate-findings is active.")
-    public boolean failOnYellowFindings;
+        /**
+         * Whether to fail on yellow findings
+         */
+        @Option(names = {"--fail-on-yellow-findings"},
+                description = "Whether to fail on yellow findings (with exit code 2). Can only be used if --evaluate-findings is active.")
+        public boolean failOnYellowFindings;
 
-    /** Whether to fail on findings in modified code */
-    @Option(names = {"--fail-on-modified-code-findings"},
-            description = "Fail on findings in modified code (not just new findings). Can only be used if --evaluate-findings is active.")
-    public boolean failOnModified;
+        /**
+         * Whether to fail on findings in modified code
+         */
+        @Option(names = {"--fail-on-modified-code-findings"},
+                description = "Fail on findings in modified code (not just new findings). Can only be used if --evaluate-findings is active.")
+        public boolean failOnModified;
 
-    /** The target branch to compare with */
-    @Option(names = {"--target-branch"},
-            description = "The target branch to compare with using Teamscale's delta service. If specified, findings will be evaluated by comparing the current branch with this target branch.")
-    public String targetBranch;
-}
+        /**
+         * The target branch to compare with
+         */
+        @Option(names = {"--target-commit"},
+                description = "The commit to compare with using Teamscale's branch merge delta service. If specified, findings will be evaluated based on what would happen if the commit specified via --commit would be merged into this commit.")
+        // TODO validation
+        public String targetCommit;
 
-    /** The username of the Teamscale user performing the query */
+        /**
+         * The target branch to compare with
+         */
+        @Option(names = {"--base-commit"},
+                description = "The base commit to compare with using Teamscale's linear delta service. The commit needs to be a parent of the one specified via --commit. If specified, findings of all commits in between the two will be evaluated.")
+        // TODO validation
+        // TODO readme doc
+        // TODO this cannot handle commit hashes, should it? Maybe add a second option as for --commit and --branch-and-timestamp?
+        public String baseCommit;
+    }
+
+    /**
+     * The username of the Teamscale user performing the query
+     */
     private String user;
 
-    /** The access key of the Teamscale user performing the query */
+    /**
+     * The access key of the Teamscale user performing the query
+     */
     private String accessKey;
 
-    /** The options specifying the queried commit. */
+    /**
+     * The options specifying the queried commit.
+     */
     @ArgGroup(exclusive = true, multiplicity = "1")
     private CommitOptions commitOptions;
 
     private static class CommitOptions {
 
-        /** The branch and timestamp info for the queried commit. May be <code>null</code>. */
+        /**
+         * The branch and timestamp info for the queried commit. May be <code>null</code>.
+         */
         private String branchAndTimestamp;
 
         @Option(names = {"-b", "--branch-and-timestamp"}, paramLabel = "<branch:timestamp>",
@@ -154,7 +201,9 @@ public static class FindingEvalOptions {
             this.branchAndTimestamp = branchAndTimestamp;
         }
 
-        /** The revision (hash) of the queried commit. May be <code>null</code>. */
+        /**
+         * The revision (hash) of the queried commit. May be <code>null</code>.
+         */
         @Option(names = {"-c", "--commit"}, paramLabel = "<commit-revision>",
                 description = "The version control commit revision for which analysis results should be obtained." +
                         " This is typically the commit that the current CI pipeline is building." +
@@ -232,12 +281,16 @@ public static class FindingEvalOptions {
         this.accessKey = accessKey;
     }
 
-    /** The duration to wait for Teamscale analysis of the commit to finish up. */
+    /**
+     * The duration to wait for Teamscale analysis of the commit to finish up.
+     */
     @Option(names = {"--wait-for-analysis-timeout"}, paramLabel = "<iso-8601-duration>", required = false,
             description = "The duration this tool will wait for analysis of the given commit to be finished in Teamscale, given in ISO-8601 format (e.g., PT20m for 20 minutes or PT30s for 30 seconds). This is useful when Teamscale starts analyzing at the same time this tool is called, and analysis is not yet finished. Default value is 20 minutes.")
     public Duration waitForAnalysisTimeoutDuration = Duration.ofMinutes(20);
 
-    /** The URL of the remote repository used to send a commit hook event to Teamscale. */
+    /**
+     * The URL of the remote repository used to send a commit hook event to Teamscale.
+     */
     @Option(names = {"--repository-url"}, paramLabel = "<remote-repository-url>", required = false,
             description = "The URL of the remote repository where the analyzed commit originated. This is required in case a commit hook event should be sent to Teamscale for this repository if the repository URL cannot be established from the build environment.")
     public String remoteRepositoryUrl;
@@ -329,11 +382,17 @@ public static class FindingEvalOptions {
             }
 
             if (findingEvalOptions.evaluateFindings) {
-                if (StringUtils.isEmpty(findingEvalOptions.targetBranch)) {
+                if (!StringUtils.isEmpty(findingEvalOptions.targetCommit) && !StringUtils.isEmpty(findingEvalOptions.baseCommit)) {
+                    throw new InvalidParametersException("Cannot use both --target-commit and --base-commit options at the same time.");
+                }
+                if (StringUtils.isEmpty(findingEvalOptions.targetCommit) && StringUtils.isEmpty(findingEvalOptions.baseCommit)) {
                     System.out.println("Evaluating findings for the current commit...");
+                } else if (!StringUtils.isEmpty(findingEvalOptions.targetCommit)) {
+                    System.out.println("Evaluating findings by comparing the current commit with target commit '" +
+                            findingEvalOptions.targetCommit + "'...");
                 } else {
-                    System.out.println("Evaluating findings by comparing the current branch with target branch '" +
-                            findingEvalOptions.targetBranch + "'...");
+                    System.out.println("Evaluating findings by aggregating the findings from the base commit '" +
+                            findingEvalOptions.baseCommit + "'...");
                 }
 
                 String findingAssessments = fetchFindings();
@@ -346,14 +405,10 @@ public static class FindingEvalOptions {
                 if (findingsResult.toStatusCode() > 0) {
                     HttpUrl.Builder urlBuilder;
 
-                    if (StringUtils.isEmpty(findingEvalOptions.targetBranch)) {
-                        // For single commit evaluation, link to activity.html
-                        urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("activity.html")
-                                .fragment("details/" + project + "?t=" + determineBranchAndTimestamp());
-                    } else {
+                    if (!StringUtils.isEmpty(findingEvalOptions.targetCommit)) {
                         // For branch comparison, link to delta
-                        String sourceBranchHead = calculateCurrentBranchHeadCommitDescriptor();
-                        String targetBranchAndTimestamp = findingEvalOptions.targetBranch + ":HEAD";
+                        String sourceBranchHead = determineBranchAndTimestamp();
+                        String targetBranchAndTimestamp = findingEvalOptions.targetCommit;
                         urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta")
                                 .addPathSegment("findings")
                                 .addPathSegment(project)
@@ -363,6 +418,21 @@ public static class FindingEvalOptions {
                                 .addQueryParameter("finding-section", "1") // Show red findings section
                                 .addQueryParameter("filter-option", "EXCLUDED"); // Hide flagged findings
 
+                    } else if (!StringUtils.isEmpty(findingEvalOptions.baseCommit)) {
+                        // For branch comparison, link to delta.html
+                        String currentBranchAndTimestamp = determineBranchAndTimestamp();
+                        String baseBranchAndTimestamp = findingEvalOptions.baseCommit;
+                        urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta")
+                                .addPathSegment("findings")
+                                .addPathSegment(project)
+                                .addQueryParameter("from", baseBranchAndTimestamp)
+                                .addQueryParameter("to", currentBranchAndTimestamp)
+                                .addQueryParameter("finding-section", "1") // Show red findings section
+                                .addQueryParameter("filter-option", "EXCLUDED"); // Hide flagged findings
+                    } else {
+                        // For single commit evaluation, link to activity.html
+                        urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("activity.html")
+                                .fragment("details/" + project + "?t=" + determineBranchAndTimestamp());
                     }
 
                     System.out.println(
@@ -381,12 +451,6 @@ public static class FindingEvalOptions {
             client.connectionPool().evictAll();
         }
 
-    }
-
-    private String calculateCurrentBranchHeadCommitDescriptor() throws IOException {
-        String currentBranchAndTimestamp = determineBranchAndTimestamp();
-        String[] split = currentBranchAndTimestamp.split(":", 2);
-        return split[0] + ":HEAD";
     }
 
     /**
@@ -479,13 +543,37 @@ public static class FindingEvalOptions {
      * @throws IOException If there's an error communicating with the Teamscale server
      */
     private String fetchFindings() throws IOException {
-        if (StringUtils.isEmpty(findingEvalOptions.targetBranch)) {
-            // Use the original finding-churn/list endpoint when no target branch is specified
-            return fetchFindingsUsingChurnList();
-        } else {
+        if (!StringUtils.isEmpty(findingEvalOptions.targetCommit)) {
             // Use the delta service when a target branch is specified
-            return fetchFindingsUsingDeltaService();
+            return fetchFindingsUsingBranchMergeDelta();
+        } else if (!StringUtils.isEmpty(findingEvalOptions.baseCommit)) {
+            return fetchFindingsUsingLinearDelta();
+        } else {
+            // Use the original finding-churn/list endpoint when no target branch is specified
+            return fetchFindingsUsingCommitDetails();
         }
+    }
+
+    // TODO docs
+    private String fetchFindingsUsingLinearDelta() throws IOException {
+        String currentBranchAndTimestamp = determineBranchAndTimestamp();
+
+        HttpUrl.Builder builder =
+                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
+                        .addPathSegments("findings/delta");
+
+        // Add the current branch and timestamp as the end point (t2)
+        builder.addQueryParameter("t2", currentBranchAndTimestamp);
+
+        // Add the target branch as the start point (t1)
+        builder.addQueryParameter("t1", findingEvalOptions.baseCommit);
+
+        // Add uniform path parameter (empty for root)
+        builder.addQueryParameter("uniform-path", "");
+
+        HttpUrl url = builder.build();
+        Request request = createAuthenticatedGetRequest(url);
+        return sendRequest(url, request);
     }
 
     /**
@@ -497,7 +585,7 @@ public static class FindingEvalOptions {
      * @return The JSON response from the finding-churn/list endpoint containing the findings
      * @throws IOException If there's an error communicating with the Teamscale server
      */
-    private String fetchFindingsUsingChurnList() throws IOException {
+    private String fetchFindingsUsingCommitDetails() throws IOException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
                         .addPathSegments("finding-churn/list");
@@ -522,15 +610,15 @@ public static class FindingEvalOptions {
      * @return The JSON response from the delta service containing the finding differences
      * @throws IOException If there's an error communicating with the Teamscale server
      */
-    private String fetchFindingsUsingDeltaService() throws IOException {
-        String currentBranchHead = calculateCurrentBranchHeadCommitDescriptor();
+    private String fetchFindingsUsingBranchMergeDelta() throws IOException {
+        String currentBranchHead = determineBranchAndTimestamp();
 
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
                         .addPathSegments("merge-requests/finding-churn");
 
         builder.addQueryParameter("source", currentBranchHead);
-        builder.addQueryParameter("target", findingEvalOptions.targetBranch + ":HEAD");
+        builder.addQueryParameter("target", findingEvalOptions.targetCommit);
 
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
