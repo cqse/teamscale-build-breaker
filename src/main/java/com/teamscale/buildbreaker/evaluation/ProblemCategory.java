@@ -2,10 +2,13 @@ package com.teamscale.buildbreaker.evaluation;
 
 /** The categories in which problems are divided. */
 public enum ProblemCategory {
-    WARNING, ERROR;
+    NONE, WARNING, ERROR;
 
     public static ProblemCategory fromRatingString(String rating) {
         switch (rating) {
+			case "GREEN":
+			case "UNKNOWN":
+				return NONE;
             case "YELLOW":
                 return WARNING;
             case "RED":
