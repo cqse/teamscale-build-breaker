@@ -131,17 +131,14 @@ public class BuildBreaker implements Callable<Integer> {
                 description = "Fail on findings in modified code (not just new findings). Can only be used if --evaluate-findings is active.")
         public boolean failOnModified;
 
-        /**
-         * The target branch to compare with
-         */
+        // TODO Javadoc, description and readme
         @Option(names = {"--target-commit"},
                 description = "The commit to compare with using Teamscale's branch merge delta service. If specified, findings will be evaluated based on what would happen if the commit specified via --commit would be merged into this commit.")
-        // TODO description and readme
         public String targetCommit;
 
         private String targetBranchAndTimestamp;
 
-        // TODO description & README
+        // TODO Javadoc, description and readme
         @Option(names = {"--target-branch-and-timestamp"},
                 description = "TODO")
         public void setTargetBranchAndTimestamp(String targetBranchAndTimestamp) {
@@ -149,19 +146,14 @@ public class BuildBreaker implements Callable<Integer> {
             this.targetBranchAndTimestamp = targetBranchAndTimestamp;
         }
 
-        /**
-         * The target branch to compare with
-         */
+        // TODO Javadoc, description and readme
         @Option(names = {"--base-commit"},
                 description = "The base commit to compare with using Teamscale's linear delta service. The commit needs to be a parent of the one specified via --commit. If specified, findings of all commits in between the two will be evaluated.")
-        // TODO validation
-        // TODO readme doc
-        // TODO this cannot handle commit hashes, should it? Maybe add a second option as for --commit and --branch-and-timestamp?
         public String baseCommit;
 
         private String baseBranchAndTimestamp;
 
-        // TODO description & README
+        // TODO Javadoc, description and readme
         @Option(names = {"--base-branch-and-timestamp"},
                 description = "TODO")
         public void setBaseBranchAndTimestamp(String baseBranchAndTimestamp) {
@@ -183,7 +175,7 @@ public class BuildBreaker implements Callable<Integer> {
     /**
      * The options specifying the queried commit.
      */
-    @ArgGroup(exclusive = true, multiplicity = "1")
+    @ArgGroup(multiplicity = "1")
     private CommitOptions commitOptions;
 
     private static class CommitOptions {
@@ -242,21 +234,21 @@ public class BuildBreaker implements Callable<Integer> {
     /**
      * The duration to wait for Teamscale analysis of the commit to finish up.
      */
-    @Option(names = {"--wait-for-analysis-timeout"}, paramLabel = "<iso-8601-duration>", required = false,
+    @Option(names = {"--wait-for-analysis-timeout"}, paramLabel = "<iso-8601-duration>",
             description = "The duration this tool will wait for analysis of the given commit to be finished in Teamscale, given in ISO-8601 format (e.g., PT20m for 20 minutes or PT30s for 30 seconds). This is useful when Teamscale starts analyzing at the same time this tool is called, and analysis is not yet finished. Default value is 20 minutes.")
     public Duration waitForAnalysisTimeoutDuration = Duration.ofMinutes(20);
 
     /**
      * The URL of the remote repository used to send a commit hook event to Teamscale.
      */
-    @Option(names = {"--repository-url"}, paramLabel = "<remote-repository-url>", required = false,
+    @Option(names = {"--repository-url"}, paramLabel = "<remote-repository-url>",
             description = "The URL of the remote repository where the analyzed commit originated. This is required in case a commit hook event should be sent to Teamscale for this repository if the repository URL cannot be established from the build environment.")
     public String remoteRepositoryUrl;
 
-    @ArgGroup(exclusive = true)
+    @ArgGroup()
     private SslConnectionOptions sslConnectionOptions;
 
-    private class SslConnectionOptions {
+    private static class SslConnectionOptions {
         @Option(names = "--insecure",
                 description = "By default, SSL certificates are validated against the configured KeyStore." +
                         " This flag disables validation which makes using this tool with self-signed certificates easier.")
@@ -408,11 +400,10 @@ public class BuildBreaker implements Callable<Integer> {
                         .fragment("details/" + project + "?t=" + currentBranchAndTimestamp);
             } else if (!StringUtils.isEmpty(targetBranchAndTimestamp)) {
                 // For branch comparison, link to delta
-                String sourceBranchHead = currentBranchAndTimestamp;
                 urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta")
                         .addPathSegment("findings")
                         .addPathSegment(project)
-                        .addQueryParameter("from", sourceBranchHead)
+                        .addQueryParameter("from", currentBranchAndTimestamp)
                         .addQueryParameter("to", targetBranchAndTimestamp)
                         .addQueryParameter("showMergeFindings", "true")
                         .addQueryParameter("finding-section", "1") // Show red findings section
