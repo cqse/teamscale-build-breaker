@@ -113,10 +113,9 @@ public class TeamscaleClient implements AutoCloseable {
 
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
-                        .addPathSegments("merge-requests/finding-churn");
-
-        builder.addQueryParameter("source", sourceBranchAndTimestamp);
-        builder.addQueryParameter("target", targetBranchAndTimestamp);
+                        .addPathSegments("merge-requests/finding-churn")
+                        .addQueryParameter("source", sourceBranchAndTimestamp)
+                        .addQueryParameter("target", targetBranchAndTimestamp);
 
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
@@ -138,17 +137,17 @@ public class TeamscaleClient implements AutoCloseable {
 
     private List<MetricViolation> parseMetricResponse(String response) {
         List<MetricViolation> result = new ArrayList<>();
-            DocumentContext metricAssessments = JsonPath.parse(response);
-            List<Map<String, Object>> metricViolations = metricAssessments.read("$..metrics.*");
-            for (Map<String, Object> metricViolation : metricViolations) {
-                Map<String, String> metricThresholds = (Map<String, String>) metricViolation.get("metricThresholds");
-                String displayName = metricViolation.get("displayName").toString();
-                String yellowThreshold = metricThresholds.get("thresholdYellow");
-                        String redThreshold = metricThresholds.get("thresholdRed");
-                String formattedTextValue = metricViolation.get("formattedTextValue").toString();
-                ProblemCategory rating = ProblemCategory.fromRatingString((String) metricViolation.get("rating"));
-                result.add(new MetricViolation(displayName, yellowThreshold, redThreshold, formattedTextValue, rating));
-            }
+        DocumentContext metricAssessments = JsonPath.parse(response);
+        List<Map<String, Object>> metricViolations = metricAssessments.read("$..metrics.*");
+        for (Map<String, Object> metricViolation : metricViolations) {
+            Map<String, String> metricThresholds = (Map<String, String>) metricViolation.get("metricThresholds");
+            String displayName = metricViolation.get("displayName").toString();
+            String yellowThreshold = metricThresholds.get("thresholdYellow");
+            String redThreshold = metricThresholds.get("thresholdRed");
+            String formattedTextValue = metricViolation.get("formattedTextValue").toString();
+            ProblemCategory rating = ProblemCategory.fromRatingString((String) metricViolation.get("rating"));
+            result.add(new MetricViolation(displayName, yellowThreshold, redThreshold, formattedTextValue, rating));
+        }
         return result;
     }
 
@@ -215,7 +214,7 @@ public class TeamscaleClient implements AutoCloseable {
         return result;
     }
 
-    private static List<Finding> parseFindings(List<Map<String, Object>> addedFindings) throws ParserException{
+    private static List<Finding> parseFindings(List<Map<String, Object>> addedFindings) throws ParserException {
         try {
             return addedFindings.stream().map(findingMap -> {
                 String id = findingMap.get("id").toString();
