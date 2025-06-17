@@ -1,10 +1,16 @@
 package com.teamscale.buildbreaker.commandline;
 
+import com.teamscale.buildbreaker.OkHttpClientUtils;
 import com.teamscale.buildbreaker.autodetect_revision.EnvironmentVariableChecker;
 import com.teamscale.buildbreaker.autodetect_revision.GitChecker;
 import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
-import com.teamscale.buildbreaker.client.OkHttpClientUtils;
 import com.teamscale.buildbreaker.client.TeamscaleClient;
+import com.teamscale.buildbreaker.client.exceptions.CommitCouldNotBeResolvedException;
+import com.teamscale.buildbreaker.client.exceptions.HttpRedirectException;
+import com.teamscale.buildbreaker.client.exceptions.HttpStatusCodeException;
+import com.teamscale.buildbreaker.client.exceptions.ParserException;
+import com.teamscale.buildbreaker.client.exceptions.RepositoryNotFoundException;
+import com.teamscale.buildbreaker.client.exceptions.TooManyCommitsException;
 import com.teamscale.buildbreaker.evaluation.EvaluationResult;
 import com.teamscale.buildbreaker.evaluation.Finding;
 import com.teamscale.buildbreaker.evaluation.FindingsEvaluator;
@@ -17,6 +23,7 @@ import com.teamscale.buildbreaker.exceptions.PrintExceptionMessageHandler;
 import com.teamscale.buildbreaker.exceptions.SslConnectionFailureException;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
+import okhttp3.Response;
 import org.conqat.lib.commons.collections.Pair;
 import org.conqat.lib.commons.string.StringUtils;
 import picocli.CommandLine;
@@ -29,6 +36,8 @@ import picocli.CommandLine.Spec;
 
 import javax.net.ssl.SSLHandshakeException;
 import java.io.IOException;
+import java.net.ConnectException;
+import java.net.UnknownHostException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -127,7 +136,7 @@ public class BuildBreaker implements Callable<Integer> {
         OkHttpClient okHttpClient = OkHttpClientUtils
                 .createClient(sslConnectionOptions.disableSslValidation, sslConnectionOptions.keyStorePath,
                         sslConnectionOptions.keyStorePassword);
-        teamscaleClient = new TeamscaleClient(okHttpClient, teamscaleServerUrl, user, accessKey, project, this::fail);
+        teamscaleClient = new TeamscaleClient(okHttpClient, teamscaleServerUrl, user, accessKey, project);
         EvaluationResult aggregatedResult = new EvaluationResult();
 
         try {
@@ -142,16 +151,37 @@ public class BuildBreaker implements Callable<Integer> {
             return aggregatedResult.toStatusCode();
         } catch (SSLHandshakeException e) {
             handleSslConnectionFailure(e);
-            return -1;
+        } catch (UnknownHostException e) {
+            fail("The host " + teamscaleServerUrl + " could not be resolved. Please ensure you have no typo and that" +
+                    " this host is reachable from this server. " + e.getMessage());
+        } catch (ConnectException e) {
+            fail("The URL " + teamscaleServerUrl + " refused a connection. Please ensure that you have no typo and that" +
+                    " this endpoint is reachable and not blocked by firewalls. " + e.getMessage());
+        } catch (HttpRedirectException e) {
+            fail("You provided an incorrect URL. The server responded with a redirect to " + "'" + e.getRedirectLocation() + "'." +
+                    " This may e.g. happen if you used HTTP instead of HTTPS." +
+                    " Please use the correct URL for Teamscale instead.");
+        } catch (HttpStatusCodeException e) {
+            handleHttpStatusCodeException(e);
+        } catch (CommitCouldNotBeResolvedException e) {
+            // We do not call fail here because we want to keep the old api of returning code -5
+            System.out.println("Could not resolve revision " + e.getRevision() +
+                    " to a valid commit known to Teamscale (no commits returned)");
+            return -5;
+        } catch (TooManyCommitsException e) {
+            fail("Could not resolve revision " + e.getRevision() +
+                    " to a valid commit known to Teamscale (too many commits returned): " + e.getCommitDescriptorsJson());
+        } catch (IOException e) {
+            fail("Encountered an error while requesting data from Teamscale: ");
         } finally {
             // we must shut down OkHttp as otherwise it will leave threads running and
             // prevent JVM shutdown
             teamscaleClient.close();
         }
-
+        return -9000; // Should never be reached
     }
 
-    private EvaluationResult evaluateFindings() throws IOException {
+    private EvaluationResult evaluateFindings() throws IOException, TooManyCommitsException, HttpRedirectException, HttpStatusCodeException, CommitCouldNotBeResolvedException, ParserException {
         String currentBranchAndTimestamp = determineBranchAndTimestamp();
         String targetBranchAndTimestamp = determineTargetBranchAndTimestamp();
         String baseBranchAndTimestamp = determineBaseBranchAndTimestamp();
@@ -212,7 +242,7 @@ public class BuildBreaker implements Callable<Integer> {
         return findingsResult;
     }
 
-    private EvaluationResult evaluateMetrics() throws IOException {
+    private EvaluationResult evaluateMetrics() throws IOException, HttpRedirectException, HttpStatusCodeException, TooManyCommitsException, CommitCouldNotBeResolvedException, ParserException {
         System.out.println("Evaluating thresholds...");
         String currentBranchAndTimestamp = determineBranchAndTimestamp();
         List<MetricViolation> metricAssessments = teamscaleClient.fetchMetricAssessments(currentBranchAndTimestamp, thresholdEvalOptions.thresholdConfig);
@@ -241,13 +271,22 @@ public class BuildBreaker implements Callable<Integer> {
         }
     }
 
-    private void waitForAnalysisToFinish(String branchAndTimestampToWaitFor) throws IOException, InterruptedException {
+    private void waitForAnalysisToFinish(String branchAndTimestampToWaitFor) throws IOException, InterruptedException, HttpRedirectException, HttpStatusCodeException {
         LocalDateTime timeout = LocalDateTime.now().plus(waitForAnalysisTimeoutDuration);
         boolean teamscaleAnalysisFinished = teamscaleClient.isTeamscaleAnalysisFinished(branchAndTimestampToWaitFor);
         if (!teamscaleAnalysisFinished) {
             System.out.println(
                     "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Triggering Teamscale commit hook on repository.");
-            teamscaleClient.triggerCommitHookEvent(remoteRepositoryUrl);
+            try {
+                teamscaleClient.triggerCommitHookEvent(remoteRepositoryUrl);
+                System.out.println("Commit hook triggered successfully.");
+            } catch (RepositoryNotFoundException e) {
+                System.out.println(
+                        "Failed to automatically detect the remote repository URL. Please specify it manually via --repository-url to enable sending a commit hook event to Teamscale.");
+            } catch (IOException e) {
+                System.out.println("Failure when trying to send the commit hook event to Teamscale: " + e);
+            }
+
         }
         while (!teamscaleAnalysisFinished && LocalDateTime.now().isBefore(timeout)) {
             System.out.println(
@@ -263,7 +302,7 @@ public class BuildBreaker implements Callable<Integer> {
         }
     }
 
-    private String determineBranchAndTimestamp() throws IOException {
+    private String determineBranchAndTimestamp() throws IOException, TooManyCommitsException, HttpRedirectException, HttpStatusCodeException, CommitCouldNotBeResolvedException {
         if (!StringUtils.isEmpty(commitOptions.commit)) {
             return teamscaleClient.fetchTimestampForRevision(commitOptions.commit);
         }
@@ -281,7 +320,17 @@ public class BuildBreaker implements Callable<Integer> {
         }
     }
 
-    private String determineTargetBranchAndTimestamp() throws IOException {
+    private String detectCommit() {
+        List<Supplier<String>> commitDetectionStrategies =
+                List.of(() -> detectedCommit, EnvironmentVariableChecker::findCommit, GitChecker::findCommit,
+                        SvnChecker::findRevision);
+        Optional<String> optionalCommit =
+                commitDetectionStrategies.stream().map(Supplier::get).filter(Objects::nonNull).findFirst();
+        optionalCommit.ifPresent(commit -> detectedCommit = commit);
+        return detectedCommit;
+    }
+
+    private String determineTargetBranchAndTimestamp() throws IOException, TooManyCommitsException, HttpRedirectException, HttpStatusCodeException, CommitCouldNotBeResolvedException {
         if (!StringUtils.isEmpty(findingEvalOptions.targetRevision)) {
             return teamscaleClient.fetchTimestampForRevision(findingEvalOptions.targetRevision);
         } else if (!StringUtils.isEmpty(findingEvalOptions.targetBranchAndTimestamp)) {
@@ -291,7 +340,7 @@ public class BuildBreaker implements Callable<Integer> {
         }
     }
 
-    private String determineBaseBranchAndTimestamp() throws IOException {
+    private String determineBaseBranchAndTimestamp() throws IOException, TooManyCommitsException, HttpRedirectException, HttpStatusCodeException, CommitCouldNotBeResolvedException {
         if (!StringUtils.isEmpty(findingEvalOptions.baseRevision)) {
             return teamscaleClient.fetchTimestampForRevision(findingEvalOptions.baseRevision);
         } else if (!StringUtils.isEmpty(findingEvalOptions.baseBranchAndTimestamp)) {
@@ -336,20 +385,47 @@ public class BuildBreaker implements Callable<Integer> {
         }
     }
 
-    private String detectCommit() {
-        List<Supplier<String>> commitDetectionStrategies =
-                List.of(() -> detectedCommit, EnvironmentVariableChecker::findCommit, GitChecker::findCommit,
-                        SvnChecker::findRevision);
-        Optional<String> optionalCommit =
-                commitDetectionStrategies.stream().map(Supplier::get).filter(Objects::nonNull).findFirst();
-        optionalCommit.ifPresent(commit -> detectedCommit = commit);
-        return detectedCommit;
+    private void handleHttpStatusCodeException(HttpStatusCodeException e) {
+        switch (e.getStatusCode()) {
+            case 401:
+                HttpUrl editUserUrl = teamscaleServerUrl.newBuilder()
+                        .addPathSegment("admin.html#users")
+                        .addQueryParameter("action", "edit")
+                        .addQueryParameter("username", user)
+                        .build();
+                failWithHttpResponse("You provided incorrect credentials." + " Either the user '" + user + "' does not exist in Teamscale" +
+                        " or the access key you provided is incorrect." +
+                        " Please check both the username and access key in Teamscale under Admin > Users:" + " " +
+                        editUserUrl + "\nPlease use the user's access key, not their password.", e.getResponse());
+
+            case 403:
+                failWithHttpResponse("The user user '" + user + "' is not allowed to upload data to the Teamscale project '" + project +
+                        "'." + " Please grant this user the 'Perform External Uploads' permission in Teamscale" +
+                        " under Project Configuration > Projects by clicking on the button showing three" +
+                        " persons next to project '" + project + "'.", e.getResponse());
+            case 404:
+                HttpUrl projectPerspectiveUrl = teamscaleServerUrl.newBuilder()
+                        .addPathSegment("project.html")
+                        .build();
+                failWithHttpResponse("The project with ID or alias '" + project + "' does not seem to exist in Teamscale." +
+                                " Please ensure that you used the project ID or the project alias, NOT the project name." +
+                                " You can see the IDs of all projects at " + projectPerspectiveUrl +
+                                "\nPlease also ensure that the Teamscale URL is correct and no proxy is required to access it.",
+                        e.getResponse());
+
+            default:
+                failWithHttpResponse("Unexpected response from Teamscale", e.getResponse());
+
+        }
     }
 
-    /**
-     * Print error message and exit the program
-     */
     public void fail(String message) {
         throw new ParameterException(spec.commandLine(), message);
+    }
+
+    private void failWithHttpResponse(String message, Response response) {
+        String message1 = "Program execution failed:\n\n" + message + "\n\nTeamscale's response:\n" + response.toString() + "\n" +
+                OkHttpClientUtils.readBodySafe(response);
+        fail(message1);
     }
 }

@@ -3,14 +3,18 @@ package com.teamscale.buildbreaker.client;
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.PathNotFoundException;
+import com.teamscale.buildbreaker.OkHttpClientUtils;
 import com.teamscale.buildbreaker.autodetect_revision.GitChecker;
 import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
+import com.teamscale.buildbreaker.client.exceptions.CommitCouldNotBeResolvedException;
+import com.teamscale.buildbreaker.client.exceptions.HttpRedirectException;
+import com.teamscale.buildbreaker.client.exceptions.HttpStatusCodeException;
+import com.teamscale.buildbreaker.client.exceptions.ParserException;
+import com.teamscale.buildbreaker.client.exceptions.RepositoryNotFoundException;
+import com.teamscale.buildbreaker.client.exceptions.TooManyCommitsException;
 import com.teamscale.buildbreaker.evaluation.Finding;
 import com.teamscale.buildbreaker.evaluation.MetricViolation;
 import com.teamscale.buildbreaker.evaluation.ProblemCategory;
-import com.teamscale.buildbreaker.exceptions.CommitCouldNotBeResolvedException;
-import com.teamscale.buildbreaker.exceptions.ParserException;
-import com.teamscale.buildbreaker.exceptions.TooManyCommitsException;
 import okhttp3.Credentials;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
@@ -21,15 +25,12 @@ import org.conqat.lib.commons.collections.Pair;
 import org.conqat.lib.commons.string.StringUtils;
 
 import java.io.IOException;
-import java.net.ConnectException;
-import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -46,22 +47,23 @@ public class TeamscaleClient implements AutoCloseable {
     private final String user;
     private final String accessKey;
     private final String project;
-    private final Consumer<String> failHandler;
     Map<String, String> timestampRevisionCache = new HashMap<>();
 
-    public TeamscaleClient(OkHttpClient client, HttpUrl teamscaleServerUrl, String user, String accessKey, String project, Consumer<String> failHandler) {
+    public TeamscaleClient(OkHttpClient client, HttpUrl teamscaleServerUrl, String user, String accessKey, String project) {
         this.client = client;
         this.teamscaleServerUrl = teamscaleServerUrl;
         this.user = user;
         this.accessKey = accessKey;
         this.project = project;
-        this.failHandler = failHandler;
     }
 
     /**
      * @return a pair with added findings (first) and findings in changed code (second) received via the findings-churn api for a single commit ({@code api/projects/{project}/finding-churn/list}).
+     * @throws HttpRedirectException   if a redirect is encountered
+     * @throws HttpStatusCodeException if an HTTP error code was returned by Teamscale
+     * @throws ParserException         if there was an error parsing Teamscale's response
      */
-    public Pair<List<Finding>, List<Finding>> fetchFindingsUsingCommitDetails(String branchAndTimestamp) throws IOException {
+    public Pair<List<Finding>, List<Finding>> fetchFindingsUsingCommitDetails(String branchAndTimestamp) throws IOException, HttpRedirectException, HttpStatusCodeException, ParserException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder()
                         .addPathSegments("api/projects")
@@ -70,14 +72,17 @@ public class TeamscaleClient implements AutoCloseable {
                         .addQueryParameter("t", branchAndTimestamp);
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
-        String response = sendRequest(url, request);
+        String response = sendRequest(request);
         return parseFindingResponse(response);
     }
 
     /**
      * @return a pair with added findings (first) and findings in changed code (second) received via the linear delta endpoint ({@code /api/projects/{project}/findings/delta}).
+     * @throws HttpRedirectException   if a redirect is encountered
+     * @throws HttpStatusCodeException if an HTTP error code was returned by Teamscale
+     * @throws ParserException         if there was an error parsing Teamscale's response
      */
-    public Pair<List<Finding>, List<Finding>> fetchFindingsUsingLinearDelta(String startBranchAndTimestamp, String endBranchAndTimestamp) throws IOException {
+    public Pair<List<Finding>, List<Finding>> fetchFindingsUsingLinearDelta(String startBranchAndTimestamp, String endBranchAndTimestamp) throws IOException, HttpRedirectException, HttpStatusCodeException, ParserException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
                         .addPathSegments("findings/delta")
@@ -87,14 +92,17 @@ public class TeamscaleClient implements AutoCloseable {
 
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
-        String response = sendRequest(url, request);
+        String response = sendRequest(request);
         return parseFindingResponse(response);
     }
 
     /**
      * @return a pair with added findings (first) and findings in changed code (second) received via the branch merge delta endpoint ({@code /api/projects/{project}/merge-requests/findings-churn}).
+     * @throws HttpRedirectException   if a redirect is encountered
+     * @throws HttpStatusCodeException if an HTTP error code was returned by Teamscale
+     * @throws ParserException         if there was an error parsing Teamscale's response
      */
-    public Pair<List<Finding>, List<Finding>> fetchFindingsUsingBranchMergeDelta(String sourceBranchAndTimestamp, String targetBranchAndTimestamp) throws IOException {
+    public Pair<List<Finding>, List<Finding>> fetchFindingsUsingBranchMergeDelta(String sourceBranchAndTimestamp, String targetBranchAndTimestamp) throws IOException, HttpRedirectException, HttpStatusCodeException, ParserException {
 
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder()
@@ -106,14 +114,17 @@ public class TeamscaleClient implements AutoCloseable {
 
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
-        String response = sendRequest(url, request);
+        String response = sendRequest(request);
         return parseFindingResponse(response);
     }
 
     /**
      * @return a list of metric violations received from the metric assessment endpoint ({@code api/projects/{project}/metric-assessments}).
+     * @throws HttpRedirectException   if a redirect is encountered
+     * @throws HttpStatusCodeException if an HTTP error code was returned by Teamscale
+     * @throws ParserException         if there was an error parsing Teamscale's response
      */
-    public List<MetricViolation> fetchMetricAssessments(String branchAndTimestamp, String thresholdConfig) throws IOException {
+    public List<MetricViolation> fetchMetricAssessments(String branchAndTimestamp, String thresholdConfig) throws IOException, HttpRedirectException, HttpStatusCodeException, ParserException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder()
                         .addPathSegments("api/projects")
@@ -124,14 +135,18 @@ public class TeamscaleClient implements AutoCloseable {
                         .addQueryParameter("configuration-name", thresholdConfig);
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
-        String response = sendRequest(url, request);
+        String response = sendRequest(request);
         return parseMetricResponse(response);
     }
 
     /**
      * @return {@code branch:timestamp} for the given revision received via the {@code /api/projects/{project}/revision/{revision}/commits} endpoint.
+     * @throws HttpRedirectException             if a redirect is encountered
+     * @throws HttpStatusCodeException           if an HTTP error code was returned by Teamscale
+     * @throws CommitCouldNotBeResolvedException if an error happened during parsing of the responses
+     * @throws TooManyCommitsException           If more than one commit was found
      */
-    public String fetchTimestampForRevision(String revision) throws IOException {
+    public String fetchTimestampForRevision(String revision) throws IOException, TooManyCommitsException, HttpRedirectException, HttpStatusCodeException, CommitCouldNotBeResolvedException {
         if (timestampRevisionCache.containsKey(revision)) {
             return timestampRevisionCache.get(revision);
         }
@@ -144,18 +159,20 @@ public class TeamscaleClient implements AutoCloseable {
                         .addPathSegment("commits");
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
-        String commitDescriptorsJson = sendRequest(url, request);
+        String commitDescriptorsJson = sendRequest(request);
         long braceCount = commitDescriptorsJson.chars().filter(c -> c == '{').count();
         if (braceCount == 0) {
-            throw new CommitCouldNotBeResolvedException("Could not resolve revision " + revision +
-                    " to a valid commit known to Teamscale (no commits returned)");
+            throw new CommitCouldNotBeResolvedException(revision);
         }
         if (braceCount > 1) {
-            throw new TooManyCommitsException("Could not resolve revision " + revision +
-                    " to a valid commit known to Teamscale (too many commits returned): " + commitDescriptorsJson);
+            throw new TooManyCommitsException(revision, commitDescriptorsJson);
         }
         String timestamp = extractTimestamp(commitDescriptorsJson);
         String branchName = extractBranchname(commitDescriptorsJson);
+
+        if (timestamp == null || branchName == null) {
+            throw new CommitCouldNotBeResolvedException(revision);
+        }
 
         String branchWithTimestamp = branchName + ":" + timestamp;
         timestampRevisionCache.put(revision, branchWithTimestamp);
@@ -165,8 +182,12 @@ public class TeamscaleClient implements AutoCloseable {
     /**
      * Notifies Teamscale that the repository has been updated. This means that analysis of the new commit will start
      * promptly.
+     *
+     * @throws RepositoryNotFoundException if the repositoryUrl cannot be found in Teamscale
+     * @throws HttpRedirectException       if a redirect is encountered
+     * @throws HttpStatusCodeException     if an HTTP error code was returned by Teamscale
      */
-    public void triggerCommitHookEvent(String remoteRepositoryUrl) {
+    public void triggerCommitHookEvent(String remoteRepositoryUrl) throws IOException, HttpRedirectException, HttpStatusCodeException, RepositoryNotFoundException {
         String repositoryUrl = determineRemoteRepositoryUrl(remoteRepositoryUrl);
         if (StringUtils.isEmpty(repositoryUrl)) {
             return;
@@ -177,29 +198,22 @@ public class TeamscaleClient implements AutoCloseable {
         HttpUrl url = builder.build();
         Request request = new Request.Builder().header("Authorization", Credentials.basic(user, accessKey)).url(url)
                 .post(RequestBody.create(null, new byte[]{})).build();
-        try {
-            sendRequest(url, request);
-            System.out.println("Commit hook triggered successfully.");
-        } catch (IOException e) {
-            System.out.println("Failure when trying to send the commit hook event to Teamscale: " + e);
-        }
+        sendRequest(request);
     }
 
     /**
      * @return whether the analysis has reached the given timestamp on the given branch already
+     * @throws HttpRedirectException   if a redirect is encountered
+     * @throws HttpStatusCodeException if an HTTP error code was returned by Teamscale
      */
-    public boolean isTeamscaleAnalysisFinished(String branchAndTimestampToWaitFor) throws IOException {
-        try {
-            String[] branchAndTimestamp = branchAndTimestampToWaitFor.split(":", 2);
-            String branch = branchAndTimestamp[0];
-            long timestamp = Long.parseLong(branchAndTimestamp[1]);
-            return isAnalysisFinished(branch, timestamp);
-        } catch (CommitCouldNotBeResolvedException e) {
-            return false;
-        }
+    public boolean isTeamscaleAnalysisFinished(String branchAndTimestampToWaitFor) throws IOException, HttpRedirectException, HttpStatusCodeException {
+        String[] branchAndTimestamp = branchAndTimestampToWaitFor.split(":", 2);
+        String branch = branchAndTimestamp[0];
+        long timestamp = Long.parseLong(branchAndTimestamp[1]);
+        return isAnalysisFinished(branch, timestamp);
     }
 
-    private boolean isAnalysisFinished(String branch, long timestamp) throws IOException {
+    private boolean isAnalysisFinished(String branch, long timestamp) throws IOException, HttpRedirectException, HttpStatusCodeException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder()
                         .addPathSegments("api/projects")
@@ -208,7 +222,7 @@ public class TeamscaleClient implements AutoCloseable {
                         .addPathSegment(branch);
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
-        String analysisStateJson = sendRequest(url, request);
+        String analysisStateJson = sendRequest(request);
         DocumentContext analysisState = JsonPath.parse(analysisStateJson);
         try {
             Integer lastFinishedTimestamp = analysisState.read("$.timestamp");
@@ -226,7 +240,7 @@ public class TeamscaleClient implements AutoCloseable {
             result.getFirst().addAll(parseFindings(findingsJson.read("$.addedFindings.*")));
             result.getSecond().addAll(parseFindings(findingsJson.read("$.findingsInChangedCode.*")));
         } catch (ParserException | PathNotFoundException e) {
-            throw new ParserException("Could not parse JSON response:\n" + response + "\n\nPlease contact CQSE with an error report.", e);
+            throw new ParserException("Could not parse findings JSON response:\n" + response + "\n\nPlease contact CQSE with an error report.", e);
         }
         return result;
     }
@@ -247,7 +261,7 @@ public class TeamscaleClient implements AutoCloseable {
             }
             return result;
         } catch (ClassCastException | PathNotFoundException e) {
-            throw new ParserException("Could not parse JSON response:\n" + response + "\n\nPlease contact CQSE with an error report.", e);
+            throw new ParserException("Could not parse metrics JSON response:\n" + response + "\n\nPlease contact CQSE with an error report.", e);
         }
     }
 
@@ -273,7 +287,7 @@ public class TeamscaleClient implements AutoCloseable {
         if (matcher.find()) {
             return matcher.group(1);
         }
-        throw new CommitCouldNotBeResolvedException("Could not parse commit descriptor JSON: " + commitDescriptorsJson);
+        return null;
     }
 
     private String extractBranchname(String commitDescriptorsJson) {
@@ -282,23 +296,14 @@ public class TeamscaleClient implements AutoCloseable {
         if (matcher.find()) {
             return matcher.group(1);
         }
-        throw new CommitCouldNotBeResolvedException("Could not parse commit descriptor JSON: " + commitDescriptorsJson);
+        return null;
     }
 
-    private String sendRequest(HttpUrl url, Request request) throws IOException {
+    private String sendRequest(Request request) throws IOException, HttpRedirectException, HttpStatusCodeException {
         try (Response response = client.newCall(request).execute()) {
             handleErrors(response);
             return OkHttpClientUtils.readBodySafe(response);
-        } catch (UnknownHostException e) {
-            fail("The host " + url + " could not be resolved. Please ensure you have no typo and that" +
-                    " this host is reachable from this server. " + e.getMessage());
-        } catch (ConnectException e) {
-            fail("The URL " + url + " refused a connection. Please ensure that you have no typo and that" +
-                    " this endpoint is reachable and not blocked by firewalls. " + e.getMessage());
         }
-        // Never reached
-        throw new IllegalStateException("This state should never be reached");
-
     }
 
     private Request createAuthenticatedGetRequest(HttpUrl url) {
@@ -309,80 +314,31 @@ public class TeamscaleClient implements AutoCloseable {
                 .build();
     }
 
-    private void handleErrors(Response response) {
+    private void handleErrors(Response response) throws HttpRedirectException, HttpStatusCodeException {
         if (response.isRedirect()) {
             String location = response.header("Location");
             if (location == null) {
                 location = "<server did not provide a location header>";
             }
-            fail("You provided an incorrect URL. The server responded with a redirect to " + "'" + location + "'." +
-                    " This may e.g. happen if you used HTTP instead of HTTPS." +
-                    " Please use the correct URL for Teamscale instead.", response);
+            throw new HttpRedirectException(location);
         }
-
-        if (response.code() == 401) {
-            HttpUrl editUserUrl = teamscaleServerUrl.newBuilder()
-                    .addPathSegment("admin.html#users")
-                    .addQueryParameter("action", "edit")
-                    .addQueryParameter("username", user)
-                    .build();
-            fail("You provided incorrect credentials." + " Either the user '" + user + "' does not exist in Teamscale" +
-                    " or the access key you provided is incorrect." +
-                    " Please check both the username and access key in Teamscale under Admin > Users:" + " " +
-                    editUserUrl + "\nPlease use the user's access key, not their password.", response);
-        }
-
-        if (response.code() == 403) {
-            // can't include a URL to the corresponding Teamscale screen since that page does not support aliases
-            // and the user may have provided an alias, so we'd be directing them to a red error page in that case
-            fail("The user user '" + user + "' is not allowed to upload data to the Teamscale project '" + project +
-                    "'." + " Please grant this user the 'Perform External Uploads' permission in Teamscale" +
-                    " under Project Configuration > Projects by clicking on the button showing three" +
-                    " persons next to project '" + project + "'.", response);
-        }
-
-        if (response.code() == 404) {
-            HttpUrl projectPerspectiveUrl = teamscaleServerUrl.newBuilder()
-                    .addPathSegment("project.html")
-                    .build();
-            fail("The project with ID or alias '" + project + "' does not seem to exist in Teamscale." +
-                            " Please ensure that you used the project ID or the project alias, NOT the project name." +
-                            " You can see the IDs of all projects at " + projectPerspectiveUrl +
-                            "\nPlease also ensure that the Teamscale URL is correct and no proxy is required to access it.",
-                    response);
-        }
-
         if (!response.isSuccessful()) {
-            fail("Unexpected response from Teamscale", response);
+            throw new HttpStatusCodeException(response.code(), response);
         }
     }
 
-    private String determineRemoteRepositoryUrl(String remoteRepositoryUrl) {
+    private String determineRemoteRepositoryUrl(String remoteRepositoryUrl) throws RepositoryNotFoundException {
         String finalRemoteRepositoryUrl = remoteRepositoryUrl;
         List<Supplier<String>> repoUrlDetectionStrategies =
                 List.of(() -> finalRemoteRepositoryUrl, GitChecker::findRepoUrl, SvnChecker::findRepoUrl);
         Optional<String> optionalUrl =
                 repoUrlDetectionStrategies.stream().map(Supplier::get).filter(Objects::nonNull).findFirst();
         if (!optionalUrl.isPresent()) {
-            System.out.println(
-                    "Failed to automatically detect the remote repository URL. Please specify it manually via --repository-url to enable sending a commit hook event to Teamscale.");
-            return null;
+            throw new RepositoryNotFoundException();
         }
         remoteRepositoryUrl = optionalUrl.get();
         return remoteRepositoryUrl;
     }
-
-
-    private void fail(String message) {
-        failHandler.accept(message);
-    }
-
-    private void fail(String message, Response response) {
-        String message1 = "Program execution failed:\n\n" + message + "\n\nTeamscale's response:\n" + response.toString() + "\n" +
-                OkHttpClientUtils.readBodySafe(response);
-        fail(message1);
-    }
-
 
     @Override
     public void close() {

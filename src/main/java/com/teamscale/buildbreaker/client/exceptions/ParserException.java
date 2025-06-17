@@ -1,8 +1,6 @@
-package com.teamscale.buildbreaker.exceptions;
+package com.teamscale.buildbreaker.client.exceptions;
 
-import java.io.IOException;
-
-public class ParserException extends IOException {
+public class ParserException extends Exception {
     public ParserException(String message, Throwable cause) {
         super(message, cause);
     }
