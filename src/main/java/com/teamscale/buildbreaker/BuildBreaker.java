@@ -4,6 +4,7 @@ import com.teamscale.buildbreaker.autodetect_revision.EnvironmentVariableChecker
 import com.teamscale.buildbreaker.autodetect_revision.GitChecker;
 import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
 import com.teamscale.buildbreaker.evaluation.EvaluationResult;
+import com.teamscale.buildbreaker.evaluation.Finding;
 import com.teamscale.buildbreaker.evaluation.FindingsEvaluator;
 import com.teamscale.buildbreaker.evaluation.MetricsEvaluator;
 import com.teamscale.buildbreaker.exceptions.ExceptionToExitCodeMapper;
@@ -12,6 +13,7 @@ import com.teamscale.buildbreaker.exceptions.PrintExceptionMessageHandler;
 import com.teamscale.buildbreaker.exceptions.SslConnectionFailureException;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
+import org.conqat.lib.commons.collections.Pair;
 import org.conqat.lib.commons.string.StringUtils;
 import picocli.CommandLine;
 import picocli.CommandLine.ArgGroup;
@@ -360,7 +362,7 @@ public class BuildBreaker implements Callable<Integer> {
                     findingEvalOptions.baseCommit + "'...");
         }
 
-        String findingAssessments = fetchFindings();
+        Pair<List<Finding>, List<Finding>> findingAssessments = fetchFindings();
         EvaluationResult findingsResult = new FindingsEvaluator()
                 .evaluate(findingAssessments, findingEvalOptions.failOnYellowFindings,
                         findingEvalOptions.failOnModified);
@@ -435,7 +437,7 @@ public class BuildBreaker implements Callable<Integer> {
         }
     }
 
-    private String fetchFindings() throws IOException {
+    private Pair<List<Finding>, List<Finding>> fetchFindings() throws IOException {
         if (!StringUtils.isEmpty(findingEvalOptions.targetCommit)) {
             // Use the delta service when a target branch is specified
             return teamscaleClient.fetchFindingsUsingBranchMergeDelta(determineBranchAndTimestamp(), findingEvalOptions.targetCommit);

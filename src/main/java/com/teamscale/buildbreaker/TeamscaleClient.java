@@ -4,6 +4,8 @@ import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import com.teamscale.buildbreaker.autodetect_revision.GitChecker;
 import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
+import com.teamscale.buildbreaker.evaluation.Finding;
+import com.teamscale.buildbreaker.evaluation.ProblemCategory;
 import com.teamscale.buildbreaker.exceptions.AnalysisNotFinishedException;
 import com.teamscale.buildbreaker.exceptions.CommitCouldNotBeResolvedException;
 import com.teamscale.buildbreaker.exceptions.TooManyCommitsException;
@@ -13,6 +15,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import org.conqat.lib.commons.collections.Pair;
 import org.conqat.lib.commons.string.StringUtils;
 
 import java.io.IOException;
@@ -22,6 +25,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +35,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 // TODO return actual objects in the findings and metric fetching methods
 public class TeamscaleClient implements AutoCloseable {
@@ -51,8 +56,15 @@ public class TeamscaleClient implements AutoCloseable {
         this.failHandler = failHandler;
     }
 
-    // TODO docs
-    public String fetchFindingsUsingLinearDelta(String startBranchAndTimestamp, String endBranchAndTimestamp) throws IOException {
+    /**
+     * TODO
+     *
+     * @param startBranchAndTimestamp
+     * @param endBranchAndTimestamp
+     * @return pair of added and changed findings (that order)
+     * @throws IOException
+     */
+    public Pair<List<Finding>, List<Finding>> fetchFindingsUsingLinearDelta(String startBranchAndTimestamp, String endBranchAndTimestamp) throws IOException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
                         .addPathSegments("findings/delta")
@@ -62,44 +74,38 @@ public class TeamscaleClient implements AutoCloseable {
 
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
-        return sendRequest(url, request);
+        String response = sendRequest(url, request);
+        return parseFindingResponse(response, "$.addedFindings.*", "$.findingsInChangedCode.*");
     }
 
+
     /**
-     * Fetches findings using the original finding-churn/list endpoint.
-     * <p>
-     * This method uses Teamscale's finding-churn/list endpoint to get findings for a specific commit.
-     * It retrieves findings that were added or modified in the specified commit.
+     * TODO
      *
-     * @return The JSON response from the finding-churn/list endpoint containing the findings
-     * @throws IOException If there's an error communicating with the Teamscale server
+     * @param branchAndTimestamp
+     * @return
+     * @throws IOException
      */
-    public String fetchFindingsUsingCommitDetails(String branchAndTimestamp) throws IOException {
+    public Pair<List<Finding>, List<Finding>> fetchFindingsUsingCommitDetails(String branchAndTimestamp) throws IOException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
                         .addPathSegments("finding-churn/list")
                         .addQueryParameter("t", branchAndTimestamp);
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
-        return sendRequest(url, request);
+        String response = sendRequest(url, request);
+        return parseFindingResponse(response, "$..addedFindings.*", "$..findingsInChangedCode.*");
     }
 
     /**
-     * Fetches findings using the delta service to compare with a target branch.
-     * <p>
-     * This method uses Teamscale's delta service to compare the current branch/commit with a target branch.
-     * It sets up the API call with the appropriate parameters:
-     * <ul>
-     *   <li>t1: The target branch with HEAD timestamp (starting point for comparison)</li>
-     *   <li>t2: The current branch and timestamp (endpoint for comparison)</li>
-     *   <li>uniform-path: Empty string to include all paths</li>
-     * </ul>
-     * The delta service returns findings that were added, removed, or changed between the two branches.
+     * TODO
      *
-     * @return The JSON response from the delta service containing the finding differences
-     * @throws IOException If there's an error communicating with the Teamscale server
+     * @param sourceBranchAndTimestamp
+     * @param targetBranchAndTimestamp
+     * @return
+     * @throws IOException
      */
-    public String fetchFindingsUsingBranchMergeDelta(String sourceBranchAndTimestamp, String targetBranchAndTimestamp) throws IOException {
+    public Pair<List<Finding>, List<Finding>> fetchFindingsUsingBranchMergeDelta(String sourceBranchAndTimestamp, String targetBranchAndTimestamp) throws IOException {
 
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
@@ -110,7 +116,8 @@ public class TeamscaleClient implements AutoCloseable {
 
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
-        return sendRequest(url, request);
+        String response = sendRequest(url, request);
+        return parseFindingResponse(response, "$..addedFindings.*", "$..findingsInChangedCode.*");
     }
 
     public String fetchMetricAssessments(String branchAndTimestamp, String thresholdConfig) throws IOException {
@@ -172,6 +179,26 @@ public class TeamscaleClient implements AutoCloseable {
             throw new AnalysisNotFinishedException(
                     "The commit that should be evaluated was not analyzed by Teamscale in time before the analysis timeout.");
         }
+    }
+
+    private Pair<List<Finding>, List<Finding>> parseFindingResponse(String response, String addedFindingsPredicate, String findingsInChangedCodePredicate) {
+        DocumentContext findingsJson = JsonPath.parse(response);
+        Pair<List<Finding>, List<Finding>> result = Pair.createPair(new ArrayList<>(), new ArrayList<>());
+        result.getFirst().addAll(parseFindings(findingsJson.read(addedFindingsPredicate)));
+        result.getSecond().addAll(parseFindings(findingsJson.read(findingsInChangedCodePredicate)));
+        return result;
+    }
+
+    private static List<Finding> parseFindings(List<Map<String, Object>> addedFindings) {
+        return addedFindings.stream().map(findingMap -> {
+            String id = findingMap.get("id").toString();
+            String group = findingMap.get("groupName").toString();
+            String category = findingMap.get("categoryName").toString();
+            String message = findingMap.get("message").toString();
+            String uniformPath = ((Map<String, String>) findingMap.getOrDefault("location", new HashMap<>())).getOrDefault("uniformPath", "<undefined>");
+            ProblemCategory assessment = ProblemCategory.fromRatingString((String) findingMap.get("assessment"));
+            return new Finding(id, group, category, message, uniformPath, assessment);
+        }).collect(Collectors.toList());
     }
 
     private String extractTimestamp(String commitDescriptorsJson) {
