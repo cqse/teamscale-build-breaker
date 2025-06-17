@@ -346,25 +346,7 @@ public class BuildBreaker implements Callable<Integer> {
         EvaluationResult aggregatedResult = new EvaluationResult();
 
         try {
-            LocalDateTime timeout = LocalDateTime.now().plus(waitForAnalysisTimeoutDuration);
-            boolean teamscaleAnalysisFinished = isTeamscaleAnalysisFinished();
-            if (!teamscaleAnalysisFinished) {
-                System.out.println(
-                        "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Triggering Teamscale commit hook on repository.");
-                triggerCommitHookEvent();
-            }
-            while (!teamscaleAnalysisFinished && LocalDateTime.now().isBefore(timeout)) {
-                System.out.println(
-                        "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Will retry in ten seconds until the timeout is reached at " +
-                                DateTimeFormatter.RFC_1123_DATE_TIME.format(timeout.atZone(ZoneOffset.UTC)) +
-                                ". You can change this timeout using --wait-for-analysis-timeout.");
-                Thread.sleep(Duration.ofSeconds(10).toMillis());
-                teamscaleAnalysisFinished = isTeamscaleAnalysisFinished();
-            }
-            if (!teamscaleAnalysisFinished) {
-                throw new AnalysisNotFinishedException(
-                        "The commit that should be evaluated was not analyzed by Teamscale in time before the analysis timeout.");
-            }
+            waitForAnalysisToFinish();
             if (thresholdEvalOptions.evaluateThresholds) {
                 System.out.println("Evaluating thresholds...");
                 String metricAssessments = fetchMetricAssessments();
@@ -498,6 +480,28 @@ public class BuildBreaker implements Callable<Integer> {
         }
         if (thresholdEvalOptions == null) {
             thresholdEvalOptions = new ThresholdEvalOptions();
+        }
+    }
+
+    private void waitForAnalysisToFinish() throws IOException, InterruptedException {
+        LocalDateTime timeout = LocalDateTime.now().plus(waitForAnalysisTimeoutDuration);
+        boolean teamscaleAnalysisFinished = isTeamscaleAnalysisFinished();
+        if (!teamscaleAnalysisFinished) {
+            System.out.println(
+                    "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Triggering Teamscale commit hook on repository.");
+            triggerCommitHookEvent();
+        }
+        while (!teamscaleAnalysisFinished && LocalDateTime.now().isBefore(timeout)) {
+            System.out.println(
+                    "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Will retry in ten seconds until the timeout is reached at " +
+                            DateTimeFormatter.RFC_1123_DATE_TIME.format(timeout.atZone(ZoneOffset.UTC)) +
+                            ". You can change this timeout using --wait-for-analysis-timeout.");
+            Thread.sleep(Duration.ofSeconds(10).toMillis());
+            teamscaleAnalysisFinished = isTeamscaleAnalysisFinished();
+        }
+        if (!teamscaleAnalysisFinished) {
+            throw new AnalysisNotFinishedException(
+                    "The commit that should be evaluated was not analyzed by Teamscale in time before the analysis timeout.");
         }
     }
 
