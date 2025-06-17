@@ -2,6 +2,7 @@ package com.teamscale.buildbreaker;
 
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
+import com.jayway.jsonpath.PathNotFoundException;
 import com.teamscale.buildbreaker.autodetect_revision.GitChecker;
 import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
 import com.teamscale.buildbreaker.evaluation.Finding;
@@ -219,7 +220,7 @@ public class TeamscaleClient implements AutoCloseable {
         try {
             result.getFirst().addAll(parseFindings(findingsJson.read("$.addedFindings.*")));
             result.getSecond().addAll(parseFindings(findingsJson.read("$.findingsInChangedCode.*")));
-        } catch (IOException e) {
+        } catch (ParserException | PathNotFoundException e) {
             throw new ParserException("Could not parse JSON response:\n" + response + "\n\nPlease contact CQSE with an error report.", e);
         }
         return result;
