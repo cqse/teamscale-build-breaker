@@ -5,6 +5,7 @@ import com.jayway.jsonpath.JsonPath;
 import com.teamscale.buildbreaker.autodetect_revision.GitChecker;
 import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
 import com.teamscale.buildbreaker.evaluation.Finding;
+import com.teamscale.buildbreaker.evaluation.MetricViolation;
 import com.teamscale.buildbreaker.evaluation.ProblemCategory;
 import com.teamscale.buildbreaker.exceptions.AnalysisNotFinishedException;
 import com.teamscale.buildbreaker.exceptions.CommitCouldNotBeResolvedException;
@@ -120,7 +121,7 @@ public class TeamscaleClient implements AutoCloseable {
         return parseFindingResponse(response, "$..addedFindings.*", "$..findingsInChangedCode.*");
     }
 
-    public String fetchMetricAssessments(String branchAndTimestamp, String thresholdConfig) throws IOException {
+    public List<MetricViolation> fetchMetricAssessments(String branchAndTimestamp, String thresholdConfig) throws IOException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
                         .addPathSegment("metric-assessments").addQueryParameter("uniform-path", "")
@@ -128,8 +129,26 @@ public class TeamscaleClient implements AutoCloseable {
                         .addQueryParameter("configuration-name", thresholdConfig);
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
-        return sendRequest(url, request);
+        String response = sendRequest(url, request);
+        return parseMetricResponse(response);
     }
+
+    private List<MetricViolation> parseMetricResponse(String response) {
+        List<MetricViolation> result = new ArrayList<>();
+            DocumentContext metricAssessments = JsonPath.parse(response);
+            List<Map<String, Object>> metricViolations = metricAssessments.read("$..metrics.*");
+            for (Map<String, Object> metricViolation : metricViolations) {
+                Map<String, String> metricThresholds = (Map<String, String>) metricViolation.get("metricThresholds");
+                String displayName = metricViolation.get("displayName").toString();
+                String yellowThreshold = metricThresholds.get("thresholdYellow");
+                        String redThreshold = metricThresholds.get("thresholdRed");
+                String formattedTextValue = metricViolation.get("formattedTextValue").toString();
+                ProblemCategory rating = ProblemCategory.fromRatingString((String) metricViolation.get("rating"));
+                result.add(new MetricViolation(displayName, yellowThreshold, redThreshold, formattedTextValue, rating));
+            }
+        return result;
+    }
+
 
     public String fetchTimestampForRevision(String revision) throws IOException {
         if (timestampRevisionCache.containsKey(revision)) {

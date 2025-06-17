@@ -6,6 +6,7 @@ import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
 import com.teamscale.buildbreaker.evaluation.EvaluationResult;
 import com.teamscale.buildbreaker.evaluation.Finding;
 import com.teamscale.buildbreaker.evaluation.FindingsEvaluator;
+import com.teamscale.buildbreaker.evaluation.MetricViolation;
 import com.teamscale.buildbreaker.evaluation.MetricsEvaluator;
 import com.teamscale.buildbreaker.exceptions.ExceptionToExitCodeMapper;
 import com.teamscale.buildbreaker.exceptions.InvalidParametersException;
@@ -411,7 +412,7 @@ public class BuildBreaker implements Callable<Integer> {
 
     private EvaluationResult evaluateMetrics() throws IOException {
         System.out.println("Evaluating thresholds...");
-        String metricAssessments = teamscaleClient.fetchMetricAssessments(determineBranchAndTimestamp(), thresholdEvalOptions.thresholdConfig);
+        List<MetricViolation> metricAssessments = teamscaleClient.fetchMetricAssessments(determineBranchAndTimestamp(), thresholdEvalOptions.thresholdConfig);
         EvaluationResult metricResult =
                 new MetricsEvaluator().evaluate(metricAssessments, thresholdEvalOptions.failOnYellowMetrics);
         System.out.println(metricResult);
