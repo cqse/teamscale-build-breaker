@@ -1,26 +1,17 @@
 package com.teamscale.buildbreaker;
 
-import com.jayway.jsonpath.DocumentContext;
-import com.jayway.jsonpath.JsonPath;
 import com.teamscale.buildbreaker.autodetect_revision.EnvironmentVariableChecker;
 import com.teamscale.buildbreaker.autodetect_revision.GitChecker;
 import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
 import com.teamscale.buildbreaker.evaluation.EvaluationResult;
 import com.teamscale.buildbreaker.evaluation.FindingsEvaluator;
 import com.teamscale.buildbreaker.evaluation.MetricsEvaluator;
-import com.teamscale.buildbreaker.exceptions.AnalysisNotFinishedException;
-import com.teamscale.buildbreaker.exceptions.CommitCouldNotBeResolvedException;
 import com.teamscale.buildbreaker.exceptions.ExceptionToExitCodeMapper;
 import com.teamscale.buildbreaker.exceptions.InvalidParametersException;
 import com.teamscale.buildbreaker.exceptions.PrintExceptionMessageHandler;
 import com.teamscale.buildbreaker.exceptions.SslConnectionFailureException;
-import com.teamscale.buildbreaker.exceptions.TooManyCommitsException;
-import okhttp3.Credentials;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import okhttp3.Response;
 import org.conqat.lib.commons.string.StringUtils;
 import picocli.CommandLine;
 import picocli.CommandLine.ArgGroup;
@@ -32,22 +23,15 @@ import picocli.CommandLine.Spec;
 
 import javax.net.ssl.SSLHandshakeException;
 import java.io.IOException;
-import java.net.ConnectException;
-import java.net.UnknownHostException;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.function.Supplier;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @Command(name = "teamscale-buildbreaker", mixinStandardHelpOptions = true, version = "teamscale-buildbreaker 0.1",
         description = "Queries a Teamscale server for analysis results, evaluates them and emits a corresponding status code.",
@@ -85,11 +69,6 @@ public class BuildBreaker implements Callable<Integer> {
      */
     @ArgGroup(exclusive = false)
     private ThresholdEvalOptions thresholdEvalOptions;
-
-    /**
-     * Caches already fetched mappings from revisions to corresponding timestamps.
-     */
-    Map<String, String> timestampRevisionCache = new HashMap<>();
 
     /**
      * Caches the commit which should be analyzed.
@@ -257,7 +236,7 @@ public class BuildBreaker implements Callable<Integer> {
         }
     }
 
-    private OkHttpClient client;
+    private TeamscaleClient teamscaleClient;
 
     @Option(names = {"-s", "--server"}, paramLabel = "<teamscale-server-url>", required = true,
             description = "The URL under which the Teamscale server can be reached.")
@@ -340,16 +319,17 @@ public class BuildBreaker implements Callable<Integer> {
             throw new InvalidParametersException(
                     "Please specify at least one of --evaluate-findings or --evaluate-thresholds, otherwise no evaluation will take place.");
         }
-        client = OkHttpClientUtils
+        OkHttpClient okHttpClient = OkHttpClientUtils
                 .createClient(sslConnectionOptions.disableSslValidation, sslConnectionOptions.keyStorePath,
                         sslConnectionOptions.keyStorePassword);
+        teamscaleClient = new TeamscaleClient(okHttpClient, teamscaleServerUrl, user, accessKey, project, this::fail);
         EvaluationResult aggregatedResult = new EvaluationResult();
 
         try {
-            waitForAnalysisToFinish();
+            teamscaleClient.waitForAnalysisToFinish(waitForAnalysisTimeoutDuration, determineBranchAndTimestamp(), remoteRepositoryUrl);
             if (thresholdEvalOptions.evaluateThresholds) {
                 System.out.println("Evaluating thresholds...");
-                String metricAssessments = fetchMetricAssessments();
+                String metricAssessments = teamscaleClient.fetchMetricAssessments(determineBranchAndTimestamp(), thresholdEvalOptions.thresholdConfig);
                 EvaluationResult metricResult =
                         new MetricsEvaluator().evaluate(metricAssessments, thresholdEvalOptions.failOnYellowMetrics);
                 aggregatedResult.addAll(metricResult);
@@ -429,46 +409,9 @@ public class BuildBreaker implements Callable<Integer> {
         } finally {
             // we must shut down OkHttp as otherwise it will leave threads running and
             // prevent JVM shutdown
-            client.dispatcher().executorService().shutdownNow();
-            client.connectionPool().evictAll();
+            teamscaleClient.close();
         }
 
-    }
-
-    /**
-     * Notifies Teamscale that the repository has been updated. This means that analysis of the new commit will start
-     * promptly.
-     */
-    private void triggerCommitHookEvent() {
-        String repositoryUrl = determineRemoteRepositoryUrl();
-        if (StringUtils.isEmpty(repositoryUrl)) {
-            return;
-        }
-        HttpUrl.Builder builder = teamscaleServerUrl.newBuilder().addPathSegments("api/post-commit-hook")
-                .addQueryParameter("repository", repositoryUrl);
-        HttpUrl url = builder.build();
-        Request request = new Request.Builder().header("Authorization", Credentials.basic(user, accessKey)).url(url)
-                .post(RequestBody.create(null, new byte[]{})).build();
-        try {
-            sendRequest(url, request);
-            System.out.println("Commit hook triggered successfully.");
-        } catch (IOException e) {
-            System.out.println("Failure when trying to send the commit hook event to Teamscale: " + e);
-        }
-    }
-
-    private String determineRemoteRepositoryUrl() {
-        List<Supplier<String>> repoUrlDetectionStrategies =
-                List.of(() -> remoteRepositoryUrl, GitChecker::findRepoUrl, SvnChecker::findRepoUrl);
-        Optional<String> optionalUrl =
-                repoUrlDetectionStrategies.stream().map(Supplier::get).filter(Objects::nonNull).findFirst();
-        if (!optionalUrl.isPresent()) {
-            System.out.println(
-                    "Failed to automatically detect the remote repository URL. Please specify it manually via --repository-url to enable sending a commit hook event to Teamscale.");
-            return null;
-        }
-        remoteRepositoryUrl = optionalUrl.get();
-        return remoteRepositoryUrl;
     }
 
     private void initDefaultOptions() {
@@ -483,194 +426,21 @@ public class BuildBreaker implements Callable<Integer> {
         }
     }
 
-    private void waitForAnalysisToFinish() throws IOException, InterruptedException {
-        LocalDateTime timeout = LocalDateTime.now().plus(waitForAnalysisTimeoutDuration);
-        boolean teamscaleAnalysisFinished = isTeamscaleAnalysisFinished();
-        if (!teamscaleAnalysisFinished) {
-            System.out.println(
-                    "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Triggering Teamscale commit hook on repository.");
-            triggerCommitHookEvent();
-        }
-        while (!teamscaleAnalysisFinished && LocalDateTime.now().isBefore(timeout)) {
-            System.out.println(
-                    "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Will retry in ten seconds until the timeout is reached at " +
-                            DateTimeFormatter.RFC_1123_DATE_TIME.format(timeout.atZone(ZoneOffset.UTC)) +
-                            ". You can change this timeout using --wait-for-analysis-timeout.");
-            Thread.sleep(Duration.ofSeconds(10).toMillis());
-            teamscaleAnalysisFinished = isTeamscaleAnalysisFinished();
-        }
-        if (!teamscaleAnalysisFinished) {
-            throw new AnalysisNotFinishedException(
-                    "The commit that should be evaluated was not analyzed by Teamscale in time before the analysis timeout.");
-        }
-    }
-
-    private boolean isTeamscaleAnalysisFinished() throws IOException {
-        try {
-            String branchAndTimestampString = determineBranchAndTimestamp();
-            String[] branchAndTimestamp = branchAndTimestampString.split(":", 2);
-            String branch = branchAndTimestamp[0];
-            long timestamp = Long.parseLong(branchAndTimestamp[1]);
-            return isAnalysisFinished(branch, timestamp);
-        } catch (CommitCouldNotBeResolvedException e) {
-            return false;
-        }
-    }
-
-    private boolean isAnalysisFinished(String branch, long timestamp) throws IOException {
-        HttpUrl.Builder builder =
-                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
-                        .addPathSegment("branch-analysis-state").addPathSegment(branch);
-        HttpUrl url = builder.build();
-        Request request = createAuthenticatedGetRequest(url);
-        String analysisStateJson = sendRequest(url, request);
-        DocumentContext analysisState = JsonPath.parse(analysisStateJson);
-        try {
-            Integer lastFinishedTimestamp = analysisState.read("$.timestamp");
-            return lastFinishedTimestamp >= timestamp;
-        } catch (ClassCastException e) {
-            Long lastFinishedTimestamp = analysisState.read("$.timestamp");
-            return lastFinishedTimestamp >= timestamp;
-        }
-    }
-
-    /**
-     * Fetches findings from Teamscale based on the configuration.
-     * <p>
-     * This method determines which endpoint to use based on whether a target branch is specified:
-     * <ul>
-     *   <li>If no target branch is specified, it uses the finding-churn/list endpoint to get findings for a specific commit</li>
-     *   <li>If a target branch is specified, it uses the findings/delta endpoint to compare branches</li>
-     * </ul>
-     *
-     * @return The JSON response containing the findings
-     * @throws IOException If there's an error communicating with the Teamscale server
-     */
     private String fetchFindings() throws IOException {
         if (!StringUtils.isEmpty(findingEvalOptions.targetCommit)) {
             // Use the delta service when a target branch is specified
-            return fetchFindingsUsingBranchMergeDelta();
+            return teamscaleClient.fetchFindingsUsingBranchMergeDelta(determineBranchAndTimestamp(), findingEvalOptions.targetCommit);
         } else if (!StringUtils.isEmpty(findingEvalOptions.baseCommit)) {
-            return fetchFindingsUsingLinearDelta();
+            return teamscaleClient.fetchFindingsUsingLinearDelta(findingEvalOptions.baseCommit, determineBranchAndTimestamp());
         } else {
             // Use the original finding-churn/list endpoint when no target branch is specified
-            return fetchFindingsUsingCommitDetails();
+            return teamscaleClient.fetchFindingsUsingCommitDetails(determineBranchAndTimestamp());
         }
-    }
-
-    // TODO docs
-    private String fetchFindingsUsingLinearDelta() throws IOException {
-        String currentBranchAndTimestamp = determineBranchAndTimestamp();
-
-        HttpUrl.Builder builder =
-                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
-                        .addPathSegments("findings/delta");
-
-        // Add the current branch and timestamp as the end point (t2)
-        builder.addQueryParameter("t2", currentBranchAndTimestamp);
-
-        // Add the target branch as the start point (t1)
-        builder.addQueryParameter("t1", findingEvalOptions.baseCommit);
-
-        // Add uniform path parameter (empty for root)
-        builder.addQueryParameter("uniform-path", "");
-
-        HttpUrl url = builder.build();
-        Request request = createAuthenticatedGetRequest(url);
-        return sendRequest(url, request);
-    }
-
-    /**
-     * Fetches findings using the original finding-churn/list endpoint.
-     * <p>
-     * This method uses Teamscale's finding-churn/list endpoint to get findings for a specific commit.
-     * It retrieves findings that were added or modified in the specified commit.
-     *
-     * @return The JSON response from the finding-churn/list endpoint containing the findings
-     * @throws IOException If there's an error communicating with the Teamscale server
-     */
-    private String fetchFindingsUsingCommitDetails() throws IOException {
-        HttpUrl.Builder builder =
-                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
-                        .addPathSegments("finding-churn/list");
-        addRevisionOrBranchTimestamp(builder);
-        HttpUrl url = builder.build();
-        Request request = createAuthenticatedGetRequest(url);
-        return sendRequest(url, request);
-    }
-
-    /**
-     * Fetches findings using the delta service to compare with a target branch.
-     * <p>
-     * This method uses Teamscale's delta service to compare the current branch/commit with a target branch.
-     * It sets up the API call with the appropriate parameters:
-     * <ul>
-     *   <li>t1: The target branch with HEAD timestamp (starting point for comparison)</li>
-     *   <li>t2: The current branch and timestamp (endpoint for comparison)</li>
-     *   <li>uniform-path: Empty string to include all paths</li>
-     * </ul>
-     * The delta service returns findings that were added, removed, or changed between the two branches.
-     *
-     * @return The JSON response from the delta service containing the finding differences
-     * @throws IOException If there's an error communicating with the Teamscale server
-     */
-    private String fetchFindingsUsingBranchMergeDelta() throws IOException {
-        String currentBranchHead = determineBranchAndTimestamp();
-
-        HttpUrl.Builder builder =
-                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
-                        .addPathSegments("merge-requests/finding-churn");
-
-        builder.addQueryParameter("source", currentBranchHead);
-        builder.addQueryParameter("target", findingEvalOptions.targetCommit);
-
-        HttpUrl url = builder.build();
-        Request request = createAuthenticatedGetRequest(url);
-        return sendRequest(url, request);
-    }
-
-    private String fetchMetricAssessments() throws IOException {
-        HttpUrl.Builder builder =
-                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
-                        .addPathSegment("metric-assessments").addQueryParameter("uniform-path", "")
-                        .addQueryParameter("configuration-name", thresholdEvalOptions.thresholdConfig);
-        addRevisionOrBranchTimestamp(builder);
-        HttpUrl url = builder.build();
-        Request request = createAuthenticatedGetRequest(url);
-        return sendRequest(url, request);
-    }
-
-    private String sendRequest(HttpUrl url, Request request) throws IOException {
-        try (Response response = client.newCall(request).execute()) {
-            handleErrors(response);
-            return OkHttpClientUtils.readBodySafe(response);
-        } catch (UnknownHostException e) {
-            fail("The host " + url + " could not be resolved. Please ensure you have no typo and that" +
-                    " this host is reachable from this server. " + e.getMessage());
-        } catch (ConnectException e) {
-            fail("The URL " + url + " refused a connection. Please ensure that you have no typo and that" +
-                    " this endpoint is reachable and not blocked by firewalls. " + e.getMessage());
-        }
-        // Never reached
-        throw new IllegalStateException("This state should never be reached");
-    }
-
-    private Request createAuthenticatedGetRequest(HttpUrl url) {
-        return new Request.Builder().header("Authorization", Credentials.basic(user, accessKey)).url(url).get().build();
-    }
-
-    /**
-     * Adds either a revision or t parameter to the given builder, based on the input.
-     * <p>
-     * We track revision or branch:timestamp for the session as it should be the same for all uploads.
-     */
-    private void addRevisionOrBranchTimestamp(HttpUrl.Builder builder) throws IOException {
-        builder.addQueryParameter("t", determineBranchAndTimestamp());
     }
 
     private String determineBranchAndTimestamp() throws IOException {
         if (!StringUtils.isEmpty(commitOptions.commit)) {
-            return fetchTimestampForRevision(commitOptions.commit);
+            return teamscaleClient.fetchTimestampForRevision(commitOptions.commit);
         }
         if (!StringUtils.isEmpty(commitOptions.branchAndTimestamp)) {
             return commitOptions.branchAndTimestamp;
@@ -682,53 +452,8 @@ public class BuildBreaker implements Callable<Integer> {
                         "Failed to automatically detect the commit. Please specify it manually via --commit or --branch-and-timestamp");
             }
 
-            return fetchTimestampForRevision(commit);
+            return teamscaleClient.fetchTimestampForRevision(commit);
         }
-    }
-
-    private String fetchTimestampForRevision(String revision) throws IOException {
-        if (timestampRevisionCache.containsKey(revision)) {
-            return timestampRevisionCache.get(revision);
-        }
-        HttpUrl.Builder builder =
-                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
-                        .addPathSegment("revision").addPathSegment(revision).addPathSegment("commits");
-        HttpUrl url = builder.build();
-        Request request = createAuthenticatedGetRequest(url);
-        String commitDescriptorsJson = sendRequest(url, request);
-        long braceCount = commitDescriptorsJson.chars().filter(c -> c == '{').count();
-        if (braceCount == 0) {
-            throw new CommitCouldNotBeResolvedException("Could not resolve revision " + revision +
-                    " to a valid commit known to Teamscale (no commits returned)");
-        }
-        if (braceCount > 1) {
-            throw new TooManyCommitsException("Could not resolve revision " + revision +
-                    " to a valid commit known to Teamscale (too many commits returned): " + commitDescriptorsJson);
-        }
-        String timestamp = extractTimestamp(commitDescriptorsJson);
-        String branchname = extractBranchname(commitDescriptorsJson);
-
-        String branchWithTimestamp = branchname + ":" + timestamp;
-        timestampRevisionCache.put(revision, branchWithTimestamp);
-        return branchWithTimestamp;
-    }
-
-    private String extractTimestamp(String commitDescriptorsJson) {
-        Pattern pattern = Pattern.compile("\"timestamp\"\\s*:\\s*(\\d+)\\b");
-        Matcher matcher = pattern.matcher(commitDescriptorsJson);
-        if (matcher.find()) {
-            return matcher.group(1);
-        }
-        throw new CommitCouldNotBeResolvedException("Could not parse commit descriptor JSON: " + commitDescriptorsJson);
-    }
-
-    private String extractBranchname(String commitDescriptorsJson) {
-        Pattern pattern = Pattern.compile("\"branchName\"\\s*:\\s*\"([^\"]+)\"");
-        Matcher matcher = pattern.matcher(commitDescriptorsJson);
-        if (matcher.find()) {
-            return matcher.group(1);
-        }
-        throw new CommitCouldNotBeResolvedException("Could not parse commit descriptor JSON: " + commitDescriptorsJson);
     }
 
     public void handleSslConnectionFailure(SSLHandshakeException e) {
@@ -776,61 +501,10 @@ public class BuildBreaker implements Callable<Integer> {
         return detectedCommit;
     }
 
-    private void handleErrors(Response response) {
-        if (response.isRedirect()) {
-            String location = response.header("Location");
-            if (location == null) {
-                location = "<server did not provide a location header>";
-            }
-            fail("You provided an incorrect URL. The server responded with a redirect to " + "'" + location + "'." +
-                    " This may e.g. happen if you used HTTP instead of HTTPS." +
-                    " Please use the correct URL for Teamscale instead.", response);
-        }
-
-        if (response.code() == 401) {
-            HttpUrl editUserUrl = teamscaleServerUrl.newBuilder().addPathSegment("admin.html#users")
-                    .addQueryParameter("action", "edit").addQueryParameter("username", user).build();
-            fail("You provided incorrect credentials." + " Either the user '" + user + "' does not exist in Teamscale" +
-                    " or the access key you provided is incorrect." +
-                    " Please check both the username and access key in Teamscale under Admin > Users:" + " " +
-                    editUserUrl + "\nPlease use the user's access key, not their password.", response);
-        }
-
-        if (response.code() == 403) {
-            // can't include a URL to the corresponding Teamscale screen since that page does not support aliases
-            // and the user may have provided an alias, so we'd be directing them to a red error page in that case
-            fail("The user user '" + user + "' is not allowed to upload data to the Teamscale project '" + project +
-                    "'." + " Please grant this user the 'Perform External Uploads' permission in Teamscale" +
-                    " under Project Configuration > Projects by clicking on the button showing three" +
-                    " persons next to project '" + project + "'.", response);
-        }
-
-        if (response.code() == 404) {
-            HttpUrl projectPerspectiveUrl = teamscaleServerUrl.newBuilder().addPathSegment("project.html").build();
-            fail("The project with ID or alias '" + project + "' does not seem to exist in Teamscale." +
-                            " Please ensure that you used the project ID or the project alias, NOT the project name." +
-                            " You can see the IDs of all projects at " + projectPerspectiveUrl +
-                            "\nPlease also ensure that the Teamscale URL is correct and no proxy is required to access it.",
-                    response);
-        }
-
-        if (!response.isSuccessful()) {
-            fail("Unexpected response from Teamscale", response);
-        }
-    }
-
     /**
      * Print error message and exit the program
      */
     public void fail(String message) {
         throw new ParameterException(spec.commandLine(), message);
-    }
-
-    /**
-     * Print error message and server response, then exit program
-     */
-    private void fail(String message, Response response) {
-        fail("Program execution failed:\n\n" + message + "\n\nTeamscale's response:\n" + response.toString() + "\n" +
-                OkHttpClientUtils.readBodySafe(response));
     }
 }
