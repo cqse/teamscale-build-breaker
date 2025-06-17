@@ -8,6 +8,7 @@ import com.teamscale.buildbreaker.evaluation.Finding;
 import com.teamscale.buildbreaker.evaluation.FindingsEvaluator;
 import com.teamscale.buildbreaker.evaluation.MetricViolation;
 import com.teamscale.buildbreaker.evaluation.MetricsEvaluator;
+import com.teamscale.buildbreaker.exceptions.AnalysisNotFinishedException;
 import com.teamscale.buildbreaker.exceptions.ExceptionToExitCodeMapper;
 import com.teamscale.buildbreaker.exceptions.InvalidParametersException;
 import com.teamscale.buildbreaker.exceptions.PrintExceptionMessageHandler;
@@ -28,6 +29,7 @@ import javax.net.ssl.SSLHandshakeException;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -329,7 +331,7 @@ public class BuildBreaker implements Callable<Integer> {
         EvaluationResult aggregatedResult = new EvaluationResult();
 
         try {
-            teamscaleClient.waitForAnalysisToFinish(waitForAnalysisTimeoutDuration, determineBranchAndTimestamp(), remoteRepositoryUrl);
+            waitForAnalysisToFinish(determineBranchAndTimestamp());
             if (thresholdEvalOptions.evaluateThresholds) {
                 aggregatedResult.addAll(evaluateMetrics());
             }
@@ -447,6 +449,28 @@ public class BuildBreaker implements Callable<Integer> {
         } else {
             // Use the original finding-churn/list endpoint when no target branch is specified
             return teamscaleClient.fetchFindingsUsingCommitDetails(determineBranchAndTimestamp());
+        }
+    }
+
+    private void waitForAnalysisToFinish(String branchAndTimestampToWaitFor) throws IOException, InterruptedException {
+        LocalDateTime timeout = LocalDateTime.now().plus(waitForAnalysisTimeoutDuration);
+        boolean teamscaleAnalysisFinished = teamscaleClient.isTeamscaleAnalysisFinished(branchAndTimestampToWaitFor);
+        if (!teamscaleAnalysisFinished) {
+            System.out.println(
+                    "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Triggering Teamscale commit hook on repository.");
+            teamscaleClient.triggerCommitHookEvent(remoteRepositoryUrl);
+        }
+        while (!teamscaleAnalysisFinished && LocalDateTime.now().isBefore(timeout)) {
+            System.out.println(
+                    "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Will retry in ten seconds until the timeout is reached at " +
+                            DateTimeFormatter.RFC_1123_DATE_TIME.format(timeout.atZone(ZoneOffset.UTC)) +
+                            ". You can change this timeout using --wait-for-analysis-timeout.");
+            Thread.sleep(Duration.ofSeconds(10).toMillis());
+            teamscaleAnalysisFinished = teamscaleClient.isTeamscaleAnalysisFinished(branchAndTimestampToWaitFor);
+        }
+        if (!teamscaleAnalysisFinished) {
+            throw new AnalysisNotFinishedException(
+                    "The commit that should be evaluated was not analyzed by Teamscale in time before the analysis timeout.");
         }
     }
 

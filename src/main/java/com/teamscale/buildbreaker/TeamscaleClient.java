@@ -187,37 +187,37 @@ public class TeamscaleClient implements AutoCloseable {
         return branchWithTimestamp;
     }
 
-    /*
-     * TODO
-     * @param waitForAnalysisTimeoutDuration
-     * @param branchAndTimestampToWaitFor
-     * @param remoteRepositoryUrl
-     * @throws IOException
-     * @throws InterruptedException
+    /**
+     * Notifies Teamscale that the repository has been updated. This means that analysis of the new commit will start
+     * promptly.
      */
-    public void waitForAnalysisToFinish(Duration waitForAnalysisTimeoutDuration, String branchAndTimestampToWaitFor, String remoteRepositoryUrl) throws IOException, InterruptedException {
-        LocalDateTime timeout = LocalDateTime.now().plus(waitForAnalysisTimeoutDuration);
-        boolean teamscaleAnalysisFinished = isTeamscaleAnalysisFinished(branchAndTimestampToWaitFor);
-        if (!teamscaleAnalysisFinished) {
-            System.out.println(
-                    "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Triggering Teamscale commit hook on repository.");
-            triggerCommitHookEvent(remoteRepositoryUrl);
+    public void triggerCommitHookEvent(String remoteRepositoryUrl) {
+        String repositoryUrl = determineRemoteRepositoryUrl(remoteRepositoryUrl);
+        if (StringUtils.isEmpty(repositoryUrl)) {
+            return;
         }
-        while (!teamscaleAnalysisFinished && LocalDateTime.now().isBefore(timeout)) {
-            System.out.println(
-                    "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Will retry in ten seconds until the timeout is reached at " +
-                            DateTimeFormatter.RFC_1123_DATE_TIME.format(timeout.atZone(ZoneOffset.UTC)) +
-                            ". You can change this timeout using --wait-for-analysis-timeout.");
-            Thread.sleep(Duration.ofSeconds(10).toMillis());
-            teamscaleAnalysisFinished = isTeamscaleAnalysisFinished(branchAndTimestampToWaitFor);
-        }
-        if (!teamscaleAnalysisFinished) {
-            throw new AnalysisNotFinishedException(
-                    "The commit that should be evaluated was not analyzed by Teamscale in time before the analysis timeout.");
+        HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
+                .addPathSegments("api/post-commit-hook")
+                .addQueryParameter("repository", repositoryUrl);
+        HttpUrl url = builder.build();
+        Request request = new Request.Builder().header("Authorization", Credentials.basic(user, accessKey)).url(url)
+                .post(RequestBody.create(null, new byte[]{})).build();
+        try {
+            sendRequest(url, request);
+            System.out.println("Commit hook triggered successfully.");
+        } catch (IOException e) {
+            System.out.println("Failure when trying to send the commit hook event to Teamscale: " + e);
         }
     }
 
-    private boolean isTeamscaleAnalysisFinished(String branchAndTimestampToWaitFor) throws IOException {
+    /**
+     * TODO
+     * @param branch
+     * @param timestamp
+     * @return
+     * @throws IOException
+     */
+    public boolean isTeamscaleAnalysisFinished(String branchAndTimestampToWaitFor) throws IOException {
         try {
             String[] branchAndTimestamp = branchAndTimestampToWaitFor.split(":", 2);
             String branch = branchAndTimestamp[0];
@@ -245,29 +245,6 @@ public class TeamscaleClient implements AutoCloseable {
         } catch (ClassCastException e) {
             Long lastFinishedTimestamp = analysisState.read("$.timestamp");
             return lastFinishedTimestamp >= timestamp;
-        }
-    }
-
-    /**
-     * Notifies Teamscale that the repository has been updated. This means that analysis of the new commit will start
-     * promptly.
-     */
-    private void triggerCommitHookEvent(String remoteRepositoryUrl) {
-        String repositoryUrl = determineRemoteRepositoryUrl(remoteRepositoryUrl);
-        if (StringUtils.isEmpty(repositoryUrl)) {
-            return;
-        }
-        HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
-                .addPathSegments("api/post-commit-hook")
-                .addQueryParameter("repository", repositoryUrl);
-        HttpUrl url = builder.build();
-        Request request = new Request.Builder().header("Authorization", Credentials.basic(user, accessKey)).url(url)
-                .post(RequestBody.create(null, new byte[]{})).build();
-        try {
-            sendRequest(url, request);
-            System.out.println("Commit hook triggered successfully.");
-        } catch (IOException e) {
-            System.out.println("Failure when trying to send the commit hook event to Teamscale: " + e);
         }
     }
 
