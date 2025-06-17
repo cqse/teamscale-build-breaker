@@ -128,6 +128,13 @@ public class TeamscaleClient implements AutoCloseable {
         return parseFindingResponse(response);
     }
 
+    /**
+     * TODO
+     * @param branchAndTimestamp
+     * @param thresholdConfig
+     * @return
+     * @throws IOException
+     */
     public List<MetricViolation> fetchMetricAssessments(String branchAndTimestamp, String thresholdConfig) throws IOException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder()
@@ -143,23 +150,12 @@ public class TeamscaleClient implements AutoCloseable {
         return parseMetricResponse(response);
     }
 
-    private List<MetricViolation> parseMetricResponse(String response) {
-        List<MetricViolation> result = new ArrayList<>();
-        DocumentContext metricAssessments = JsonPath.parse(response);
-        List<Map<String, Object>> metricViolations = metricAssessments.read("$..metrics.*");
-        for (Map<String, Object> metricViolation : metricViolations) {
-            Map<String, String> metricThresholds = (Map<String, String>) metricViolation.get("metricThresholds");
-            String displayName = metricViolation.get("displayName").toString();
-            String yellowThreshold = metricThresholds.get("thresholdYellow");
-            String redThreshold = metricThresholds.get("thresholdRed");
-            String formattedTextValue = metricViolation.get("formattedTextValue").toString();
-            ProblemCategory rating = ProblemCategory.fromRatingString((String) metricViolation.get("rating"));
-            result.add(new MetricViolation(displayName, yellowThreshold, redThreshold, formattedTextValue, rating));
-        }
-        return result;
-    }
-
-
+    /**
+     * TODO
+     * @param revision
+     * @return
+     * @throws IOException
+     */
     public String fetchTimestampForRevision(String revision) throws IOException {
         if (timestampRevisionCache.containsKey(revision)) {
             return timestampRevisionCache.get(revision);
@@ -191,7 +187,14 @@ public class TeamscaleClient implements AutoCloseable {
         return branchWithTimestamp;
     }
 
-
+    /*
+     * TODO
+     * @param waitForAnalysisTimeoutDuration
+     * @param branchAndTimestampToWaitFor
+     * @param remoteRepositoryUrl
+     * @throws IOException
+     * @throws InterruptedException
+     */
     public void waitForAnalysisToFinish(Duration waitForAnalysisTimeoutDuration, String branchAndTimestampToWaitFor, String remoteRepositoryUrl) throws IOException, InterruptedException {
         LocalDateTime timeout = LocalDateTime.now().plus(waitForAnalysisTimeoutDuration);
         boolean teamscaleAnalysisFinished = isTeamscaleAnalysisFinished(branchAndTimestampToWaitFor);
@@ -214,6 +217,60 @@ public class TeamscaleClient implements AutoCloseable {
         }
     }
 
+    private boolean isTeamscaleAnalysisFinished(String branchAndTimestampToWaitFor) throws IOException {
+        try {
+            String[] branchAndTimestamp = branchAndTimestampToWaitFor.split(":", 2);
+            String branch = branchAndTimestamp[0];
+            long timestamp = Long.parseLong(branchAndTimestamp[1]);
+            return isAnalysisFinished(branch, timestamp);
+        } catch (CommitCouldNotBeResolvedException e) {
+            return false;
+        }
+    }
+
+    private boolean isAnalysisFinished(String branch, long timestamp) throws IOException {
+        HttpUrl.Builder builder =
+                teamscaleServerUrl.newBuilder()
+                        .addPathSegments("api/projects")
+                        .addPathSegment(project)
+                        .addPathSegment("branch-analysis-state")
+                        .addPathSegment(branch);
+        HttpUrl url = builder.build();
+        Request request = createAuthenticatedGetRequest(url);
+        String analysisStateJson = sendRequest(url, request);
+        DocumentContext analysisState = JsonPath.parse(analysisStateJson);
+        try {
+            Integer lastFinishedTimestamp = analysisState.read("$.timestamp");
+            return lastFinishedTimestamp >= timestamp;
+        } catch (ClassCastException e) {
+            Long lastFinishedTimestamp = analysisState.read("$.timestamp");
+            return lastFinishedTimestamp >= timestamp;
+        }
+    }
+
+    /**
+     * Notifies Teamscale that the repository has been updated. This means that analysis of the new commit will start
+     * promptly.
+     */
+    private void triggerCommitHookEvent(String remoteRepositoryUrl) {
+        String repositoryUrl = determineRemoteRepositoryUrl(remoteRepositoryUrl);
+        if (StringUtils.isEmpty(repositoryUrl)) {
+            return;
+        }
+        HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
+                .addPathSegments("api/post-commit-hook")
+                .addQueryParameter("repository", repositoryUrl);
+        HttpUrl url = builder.build();
+        Request request = new Request.Builder().header("Authorization", Credentials.basic(user, accessKey)).url(url)
+                .post(RequestBody.create(null, new byte[]{})).build();
+        try {
+            sendRequest(url, request);
+            System.out.println("Commit hook triggered successfully.");
+        } catch (IOException e) {
+            System.out.println("Failure when trying to send the commit hook event to Teamscale: " + e);
+        }
+    }
+
     private Pair<List<Finding>, List<Finding>> parseFindingResponse(String response) throws ParserException {
         DocumentContext findingsJson = JsonPath.parse(response);
         Pair<List<Finding>, List<Finding>> result = Pair.createPair(new ArrayList<>(), new ArrayList<>());
@@ -222,6 +279,22 @@ public class TeamscaleClient implements AutoCloseable {
             result.getSecond().addAll(parseFindings(findingsJson.read("$.findingsInChangedCode.*")));
         } catch (ParserException | PathNotFoundException e) {
             throw new ParserException("Could not parse JSON response:\n" + response + "\n\nPlease contact CQSE with an error report.", e);
+        }
+        return result;
+    }
+
+    private List<MetricViolation> parseMetricResponse(String response) {
+        List<MetricViolation> result = new ArrayList<>();
+        DocumentContext metricAssessments = JsonPath.parse(response);
+        List<Map<String, Object>> metricViolations = metricAssessments.read("$..metrics.*");
+        for (Map<String, Object> metricViolation : metricViolations) {
+            Map<String, String> metricThresholds = (Map<String, String>) metricViolation.get("metricThresholds");
+            String displayName = metricViolation.get("displayName").toString();
+            String yellowThreshold = metricThresholds.get("thresholdYellow");
+            String redThreshold = metricThresholds.get("thresholdRed");
+            String formattedTextValue = metricViolation.get("formattedTextValue").toString();
+            ProblemCategory rating = ProblemCategory.fromRatingString((String) metricViolation.get("rating"));
+            result.add(new MetricViolation(displayName, yellowThreshold, redThreshold, formattedTextValue, rating));
         }
         return result;
     }
@@ -258,37 +331,6 @@ public class TeamscaleClient implements AutoCloseable {
             return matcher.group(1);
         }
         throw new CommitCouldNotBeResolvedException("Could not parse commit descriptor JSON: " + commitDescriptorsJson);
-    }
-
-    private boolean isTeamscaleAnalysisFinished(String branchAndTimestampToWaitFor) throws IOException {
-        try {
-            String[] branchAndTimestamp = branchAndTimestampToWaitFor.split(":", 2);
-            String branch = branchAndTimestamp[0];
-            long timestamp = Long.parseLong(branchAndTimestamp[1]);
-            return isAnalysisFinished(branch, timestamp);
-        } catch (CommitCouldNotBeResolvedException e) {
-            return false;
-        }
-    }
-
-    private boolean isAnalysisFinished(String branch, long timestamp) throws IOException {
-        HttpUrl.Builder builder =
-                teamscaleServerUrl.newBuilder()
-                        .addPathSegments("api/projects")
-                        .addPathSegment(project)
-                        .addPathSegment("branch-analysis-state")
-                        .addPathSegment(branch);
-        HttpUrl url = builder.build();
-        Request request = createAuthenticatedGetRequest(url);
-        String analysisStateJson = sendRequest(url, request);
-        DocumentContext analysisState = JsonPath.parse(analysisStateJson);
-        try {
-            Integer lastFinishedTimestamp = analysisState.read("$.timestamp");
-            return lastFinishedTimestamp >= timestamp;
-        } catch (ClassCastException e) {
-            Long lastFinishedTimestamp = analysisState.read("$.timestamp");
-            return lastFinishedTimestamp >= timestamp;
-        }
     }
 
     private String sendRequest(HttpUrl url, Request request) throws IOException {
@@ -360,29 +402,6 @@ public class TeamscaleClient implements AutoCloseable {
 
         if (!response.isSuccessful()) {
             fail("Unexpected response from Teamscale", response);
-        }
-    }
-
-    /**
-     * Notifies Teamscale that the repository has been updated. This means that analysis of the new commit will start
-     * promptly.
-     */
-    private void triggerCommitHookEvent(String remoteRepositoryUrl) {
-        String repositoryUrl = determineRemoteRepositoryUrl(remoteRepositoryUrl);
-        if (StringUtils.isEmpty(repositoryUrl)) {
-            return;
-        }
-        HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
-                .addPathSegments("api/post-commit-hook")
-                .addQueryParameter("repository", repositoryUrl);
-        HttpUrl url = builder.build();
-        Request request = new Request.Builder().header("Authorization", Credentials.basic(user, accessKey)).url(url)
-                .post(RequestBody.create(null, new byte[]{})).build();
-        try {
-            sendRequest(url, request);
-            System.out.println("Commit hook triggered successfully.");
-        } catch (IOException e) {
-            System.out.println("Failure when trying to send the commit hook event to Teamscale: " + e);
         }
     }
 
