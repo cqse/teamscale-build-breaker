@@ -131,52 +131,42 @@ public class BuildBreaker implements Callable<Integer> {
                 description = "Fail on findings in modified code (not just new findings). Can only be used if --evaluate-findings is active.")
         public boolean failOnModified;
 
-        @ArgGroup(exclusive = true, multiplicity = "1")
-        private TargetCommitOptions targetCommitOptions;
+        /**
+         * The target branch to compare with
+         */
+        @Option(names = {"--target-commit"},
+                description = "The commit to compare with using Teamscale's branch merge delta service. If specified, findings will be evaluated based on what would happen if the commit specified via --commit would be merged into this commit.")
+        // TODO description and readme
+        public String targetCommit;
 
-        private static class TargetCommitOptions {
-            /**
-             * The target branch to compare with
-             */
-            @Option(names = {"--target-commit"},
-                    description = "The commit to compare with using Teamscale's branch merge delta service. If specified, findings will be evaluated based on what would happen if the commit specified via --commit would be merged into this commit.")
-            // TODO description and readme
-            public String targetCommit;
+        private String targetBranchAndTimestamp;
 
-            private String targetBranchAndTimestamp;
-
-            // TODO description & README
-            @Option(names = {"--target-branch-and-timestamp"},
-                    description = "TODO")
-            public void setTargetBranchAndTimestamp(String targetBranchAndTimestamp) {
-                validateBranchAndTimestamp(targetBranchAndTimestamp, "--target-branch-and-timestamp");
-                this.targetBranchAndTimestamp = targetBranchAndTimestamp;
-            }
+        // TODO description & README
+        @Option(names = {"--target-branch-and-timestamp"},
+                description = "TODO")
+        public void setTargetBranchAndTimestamp(String targetBranchAndTimestamp) {
+            validateBranchAndTimestamp(targetBranchAndTimestamp, "--target-branch-and-timestamp");
+            this.targetBranchAndTimestamp = targetBranchAndTimestamp;
         }
 
-        //        @ArgGroup(exclusive = true, multiplicity = "1")
-        private BaseCommitOptions baseCommitOptions;
+        /**
+         * The target branch to compare with
+         */
+        @Option(names = {"--base-commit"},
+                description = "The base commit to compare with using Teamscale's linear delta service. The commit needs to be a parent of the one specified via --commit. If specified, findings of all commits in between the two will be evaluated.")
+        // TODO validation
+        // TODO readme doc
+        // TODO this cannot handle commit hashes, should it? Maybe add a second option as for --commit and --branch-and-timestamp?
+        public String baseCommit;
 
-        private static class BaseCommitOptions {
-            /**
-             * The target branch to compare with
-             */
-            @Option(names = {"--base-commit"},
-                    description = "The base commit to compare with using Teamscale's linear delta service. The commit needs to be a parent of the one specified via --commit. If specified, findings of all commits in between the two will be evaluated.")
-            // TODO validation
-            // TODO readme doc
-            // TODO this cannot handle commit hashes, should it? Maybe add a second option as for --commit and --branch-and-timestamp?
-            public String baseCommit;
+        private String baseBranchAndTimestamp;
 
-            private String baseBranchAndTimestamp;
-
-            // TODO description & README
-            @Option(names = {"--base-branch-and-timestamp"},
-                    description = "TODO")
-            public void setBaseBranchAndTimestamp(String baseBranchAndTimestamp) {
-                validateBranchAndTimestamp(baseBranchAndTimestamp, "--base-branch-and-timestamp");
-                this.baseBranchAndTimestamp = baseBranchAndTimestamp;
-            }
+        // TODO description & README
+        @Option(names = {"--base-branch-and-timestamp"},
+                description = "TODO")
+        public void setBaseBranchAndTimestamp(String baseBranchAndTimestamp) {
+            validateBranchAndTimestamp(baseBranchAndTimestamp, "--base-branch-and-timestamp");
+            this.baseBranchAndTimestamp = baseBranchAndTimestamp;
         }
     }
 
@@ -516,22 +506,22 @@ public class BuildBreaker implements Callable<Integer> {
     }
 
     private String determineTargetBranchAndTimestamp() throws IOException {
-        if (!StringUtils.isEmpty(findingEvalOptions.targetCommitOptions.targetCommit)) {
-            return teamscaleClient.fetchTimestampForRevision(findingEvalOptions.targetCommitOptions.targetCommit);
-        } else if (!StringUtils.isEmpty(findingEvalOptions.targetCommitOptions.targetBranchAndTimestamp)) {
-            return findingEvalOptions.targetCommitOptions.targetBranchAndTimestamp;
+        if (!StringUtils.isEmpty(findingEvalOptions.targetCommit)) {
+            return teamscaleClient.fetchTimestampForRevision(findingEvalOptions.targetCommit);
+        } else if (!StringUtils.isEmpty(findingEvalOptions.targetBranchAndTimestamp)) {
+            return findingEvalOptions.targetBranchAndTimestamp;
         } else {
-            throw new IllegalStateException("Tried to compare against a target commit but could not determine the commit. Call: " + spec.commandLine());
+            return "";
         }
     }
 
     private String determineBaseBranchAndTimestamp() throws IOException {
-        if (!StringUtils.isEmpty(findingEvalOptions.baseCommitOptions.baseCommit)) {
-            return teamscaleClient.fetchTimestampForRevision(findingEvalOptions.baseCommitOptions.baseCommit);
-        } else if (!StringUtils.isEmpty(findingEvalOptions.baseCommitOptions.baseBranchAndTimestamp)) {
-            return findingEvalOptions.baseCommitOptions.baseBranchAndTimestamp;
+        if (!StringUtils.isEmpty(findingEvalOptions.baseCommit)) {
+            return teamscaleClient.fetchTimestampForRevision(findingEvalOptions.baseCommit);
+        } else if (!StringUtils.isEmpty(findingEvalOptions.baseBranchAndTimestamp)) {
+            return findingEvalOptions.baseBranchAndTimestamp;
         } else {
-            throw new IllegalStateException("Tried to compare against a base commit but could not determine the commit. Call: " + spec.commandLine());
+            return "";
         }
     }
 
