@@ -10,7 +10,7 @@ import java.time.format.DateTimeFormatter;
 public class BranchAndTimestampUtils {
 
     private BranchAndTimestampUtils() {
-
+        // Prevent instantiation
     }
 
     public static void validateBranchAndTimestamp(String branchAndTimestamp, String parameterName) throws CommandLine.ParameterException {
