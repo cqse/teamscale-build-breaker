@@ -135,7 +135,6 @@ To use this tool in a Jenkins pipeline, complete the following steps:
 
        pipeline {
           agent any
-
           stages {
               stage ('Teamscale Analysis') {
                   steps {
