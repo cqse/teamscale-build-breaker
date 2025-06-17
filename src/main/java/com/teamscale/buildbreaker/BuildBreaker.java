@@ -772,16 +772,6 @@ public class BuildBreaker implements Callable<Integer> {
         return detectedCommit;
     }
 
-    private String detectRepoUrl() {
-        List<Supplier<String>> commitDetectionStrategies =
-                List.of(() -> detectedCommit, EnvironmentVariableChecker::findCommit, GitChecker::findCommit,
-                        SvnChecker::findRevision);
-        Optional<String> optionalCommit =
-                commitDetectionStrategies.stream().map(Supplier::get).filter(Objects::nonNull).findFirst();
-        optionalCommit.ifPresent(commit -> detectedCommit = commit);
-        return detectedCommit;
-    }
-
     private void handleErrors(Response response) {
         if (response.isRedirect()) {
             String location = response.header("Location");
