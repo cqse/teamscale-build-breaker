@@ -231,20 +231,24 @@ public class TeamscaleClient implements AutoCloseable {
         return result;
     }
 
-    private List<MetricViolation> parseMetricResponse(String response) {
+    private List<MetricViolation> parseMetricResponse(String response) throws ParserException {
         List<MetricViolation> result = new ArrayList<>();
-        DocumentContext metricAssessments = JsonPath.parse(response);
-        List<Map<String, Object>> metricViolations = metricAssessments.read("$..metrics.*");
-        for (Map<String, Object> metricViolation : metricViolations) {
-            Map<String, String> metricThresholds = (Map<String, String>) metricViolation.get("metricThresholds");
-            String displayName = metricViolation.get("displayName").toString();
-            String yellowThreshold = metricThresholds.get("thresholdYellow");
-            String redThreshold = metricThresholds.get("thresholdRed");
-            String formattedTextValue = metricViolation.get("formattedTextValue").toString();
-            ProblemCategory rating = ProblemCategory.fromRatingString((String) metricViolation.get("rating"));
-            result.add(new MetricViolation(displayName, yellowThreshold, redThreshold, formattedTextValue, rating));
+        try {
+            DocumentContext metricAssessments = JsonPath.parse(response);
+            List<Map<String, Object>> metricViolations = metricAssessments.read("$..metrics.*");
+            for (Map<String, Object> metricViolation : metricViolations) {
+                Map<String, String> metricThresholds = (Map<String, String>) metricViolation.get("metricThresholds");
+                String displayName = metricViolation.get("displayName").toString();
+                String yellowThreshold = metricThresholds.get("thresholdYellow");
+                String redThreshold = metricThresholds.get("thresholdRed");
+                String formattedTextValue = metricViolation.get("formattedTextValue").toString();
+                ProblemCategory rating = ProblemCategory.fromRatingString((String) metricViolation.get("rating"));
+                result.add(new MetricViolation(displayName, yellowThreshold, redThreshold, formattedTextValue, rating));
+            }
+            return result;
+        } catch (ClassCastException | PathNotFoundException e) {
+            throw new ParserException("Could not parse JSON response:\n" + response + "\n\nPlease contact CQSE with an error report.", e);
         }
-        return result;
     }
 
     private static List<Finding> parseFindings(List<Map<String, Object>> addedFindings) throws ParserException {
