@@ -172,7 +172,7 @@ public class BuildBreaker implements Callable<Integer> {
             fail("Could not resolve revision " + e.getRevision() +
                     " to a valid commit known to Teamscale (too many commits returned): " + e.getCommitDescriptorsJson());
         } catch (IOException e) {
-            fail("Encountered an error while requesting data from Teamscale: ");
+            fail("Encountered an error while communicating with Teamscale: ");
         } finally {
             // we must shut down OkHttp as otherwise it will leave threads running and
             // prevent JVM shutdown
