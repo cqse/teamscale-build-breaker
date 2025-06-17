@@ -55,16 +55,10 @@ public class TeamscaleClient implements AutoCloseable {
     public String fetchFindingsUsingLinearDelta(String startBranchAndTimestamp, String endBranchAndTimestamp) throws IOException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
-                        .addPathSegments("findings/delta");
-
-        // Add the current branch and timestamp as the end point (t2)
-        builder.addQueryParameter("t2", endBranchAndTimestamp);
-
-        // Add the target branch as the start point (t1)
-        builder.addQueryParameter("t1", startBranchAndTimestamp);
-
-        // Add uniform path parameter (empty for root)
-        builder.addQueryParameter("uniform-path", "");
+                        .addPathSegments("findings/delta")
+                        .addQueryParameter("t2", endBranchAndTimestamp)
+                        .addQueryParameter("t1", startBranchAndTimestamp)
+                        .addQueryParameter("uniform-path", "");
 
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
