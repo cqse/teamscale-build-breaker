@@ -328,79 +328,11 @@ public class BuildBreaker implements Callable<Integer> {
         try {
             teamscaleClient.waitForAnalysisToFinish(waitForAnalysisTimeoutDuration, determineBranchAndTimestamp(), remoteRepositoryUrl);
             if (thresholdEvalOptions.evaluateThresholds) {
-                System.out.println("Evaluating thresholds...");
-                String metricAssessments = teamscaleClient.fetchMetricAssessments(determineBranchAndTimestamp(), thresholdEvalOptions.thresholdConfig);
-                EvaluationResult metricResult =
-                        new MetricsEvaluator().evaluate(metricAssessments, thresholdEvalOptions.failOnYellowMetrics);
-                aggregatedResult.addAll(metricResult);
-                System.out.println(metricResult);
-                if (metricResult.toStatusCode() > 0) {
-                    HttpUrl.Builder urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("metrics.html")
-                            .fragment("/" + project + "?t=" + determineBranchAndTimestamp());
-                    System.out.println(
-                            "More detailed information about these metrics is available in Teamscale's web interface at " +
-                                    urlBuilder.build());
-                }
+                aggregatedResult.addAll(evaluateMetrics());
             }
 
             if (findingEvalOptions.evaluateFindings) {
-                if (!StringUtils.isEmpty(findingEvalOptions.targetCommit) && !StringUtils.isEmpty(findingEvalOptions.baseCommit)) {
-                    throw new InvalidParametersException("Cannot use both --target-commit and --base-commit options at the same time.");
-                }
-                if (StringUtils.isEmpty(findingEvalOptions.targetCommit) && StringUtils.isEmpty(findingEvalOptions.baseCommit)) {
-                    System.out.println("Evaluating findings for the current commit...");
-                } else if (!StringUtils.isEmpty(findingEvalOptions.targetCommit)) {
-                    System.out.println("Evaluating findings by comparing the current commit with target commit '" +
-                            findingEvalOptions.targetCommit + "'...");
-                } else {
-                    System.out.println("Evaluating findings by aggregating the findings from the base commit '" +
-                            findingEvalOptions.baseCommit + "'...");
-                }
-
-                String findingAssessments = fetchFindings();
-                EvaluationResult findingsResult = new FindingsEvaluator()
-                        .evaluate(findingAssessments, findingEvalOptions.failOnYellowFindings,
-                                findingEvalOptions.failOnModified);
-                aggregatedResult.addAll(findingsResult);
-                System.out.println(findingsResult);
-
-                if (findingsResult.toStatusCode() > 0) {
-                    HttpUrl.Builder urlBuilder;
-
-                    if (!StringUtils.isEmpty(findingEvalOptions.targetCommit)) {
-                        // For branch comparison, link to delta
-                        String sourceBranchHead = determineBranchAndTimestamp();
-                        String targetBranchAndTimestamp = findingEvalOptions.targetCommit;
-                        urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta")
-                                .addPathSegment("findings")
-                                .addPathSegment(project)
-                                .addQueryParameter("from", sourceBranchHead)
-                                .addQueryParameter("to", targetBranchAndTimestamp)
-                                .addQueryParameter("showMergeFindings", "true")
-                                .addQueryParameter("finding-section", "1") // Show red findings section
-                                .addQueryParameter("filter-option", "EXCLUDED"); // Hide flagged findings
-
-                    } else if (!StringUtils.isEmpty(findingEvalOptions.baseCommit)) {
-                        // For branch comparison, link to delta.html
-                        String currentBranchAndTimestamp = determineBranchAndTimestamp();
-                        String baseBranchAndTimestamp = findingEvalOptions.baseCommit;
-                        urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta")
-                                .addPathSegment("findings")
-                                .addPathSegment(project)
-                                .addQueryParameter("from", baseBranchAndTimestamp)
-                                .addQueryParameter("to", currentBranchAndTimestamp)
-                                .addQueryParameter("finding-section", "1") // Show red findings section
-                                .addQueryParameter("filter-option", "EXCLUDED"); // Hide flagged findings
-                    } else {
-                        // For single commit evaluation, link to activity.html
-                        urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("activity.html")
-                                .fragment("details/" + project + "?t=" + determineBranchAndTimestamp());
-                    }
-
-                    System.out.println(
-                            "More detailed information about these findings is available in Teamscale's web interface at " +
-                                    urlBuilder.build());
-                }
+                aggregatedResult.addAll(evaluateFindings());
             }
             return aggregatedResult.toStatusCode();
         } catch (SSLHandshakeException e) {
@@ -412,6 +344,83 @@ public class BuildBreaker implements Callable<Integer> {
             teamscaleClient.close();
         }
 
+    }
+
+    private EvaluationResult evaluateFindings() throws IOException {
+        if (!StringUtils.isEmpty(findingEvalOptions.targetCommit) && !StringUtils.isEmpty(findingEvalOptions.baseCommit)) {
+            throw new InvalidParametersException("Cannot use both --target-commit and --base-commit options at the same time.");
+        }
+        if (StringUtils.isEmpty(findingEvalOptions.targetCommit) && StringUtils.isEmpty(findingEvalOptions.baseCommit)) {
+            System.out.println("Evaluating findings for the current commit...");
+        } else if (!StringUtils.isEmpty(findingEvalOptions.targetCommit)) {
+            System.out.println("Evaluating findings by comparing the current commit with target commit '" +
+                    findingEvalOptions.targetCommit + "'...");
+        } else {
+            System.out.println("Evaluating findings by aggregating the findings from the base commit '" +
+                    findingEvalOptions.baseCommit + "'...");
+        }
+
+        String findingAssessments = fetchFindings();
+        EvaluationResult findingsResult = new FindingsEvaluator()
+                .evaluate(findingAssessments, findingEvalOptions.failOnYellowFindings,
+                        findingEvalOptions.failOnModified);
+        System.out.println(findingsResult);
+
+        if (findingsResult.toStatusCode() > 0) {
+            HttpUrl.Builder urlBuilder;
+
+            if (!StringUtils.isEmpty(findingEvalOptions.targetCommit)) {
+                // For branch comparison, link to delta
+                String sourceBranchHead = determineBranchAndTimestamp();
+                String targetBranchAndTimestamp = findingEvalOptions.targetCommit;
+                urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta")
+                        .addPathSegment("findings")
+                        .addPathSegment(project)
+                        .addQueryParameter("from", sourceBranchHead)
+                        .addQueryParameter("to", targetBranchAndTimestamp)
+                        .addQueryParameter("showMergeFindings", "true")
+                        .addQueryParameter("finding-section", "1") // Show red findings section
+                        .addQueryParameter("filter-option", "EXCLUDED"); // Hide flagged findings
+
+            } else if (!StringUtils.isEmpty(findingEvalOptions.baseCommit)) {
+                // For branch comparison, link to delta.html
+                String currentBranchAndTimestamp = determineBranchAndTimestamp();
+                String baseBranchAndTimestamp = findingEvalOptions.baseCommit;
+                urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta")
+                        .addPathSegment("findings")
+                        .addPathSegment(project)
+                        .addQueryParameter("from", baseBranchAndTimestamp)
+                        .addQueryParameter("to", currentBranchAndTimestamp)
+                        .addQueryParameter("finding-section", "1") // Show red findings section
+                        .addQueryParameter("filter-option", "EXCLUDED"); // Hide flagged findings
+            } else {
+                // For single commit evaluation, link to activity.html
+                urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("activity.html")
+                        .fragment("details/" + project + "?t=" + determineBranchAndTimestamp());
+            }
+
+            System.out.println(
+                    "More detailed information about these findings is available in Teamscale's web interface at " +
+                            urlBuilder.build());
+        }
+
+        return findingsResult;
+    }
+
+    private EvaluationResult evaluateMetrics() throws IOException {
+        System.out.println("Evaluating thresholds...");
+        String metricAssessments = teamscaleClient.fetchMetricAssessments(determineBranchAndTimestamp(), thresholdEvalOptions.thresholdConfig);
+        EvaluationResult metricResult =
+                new MetricsEvaluator().evaluate(metricAssessments, thresholdEvalOptions.failOnYellowMetrics);
+        System.out.println(metricResult);
+        if (metricResult.toStatusCode() > 0) {
+            HttpUrl.Builder urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("metrics.html")
+                    .fragment("/" + project + "?t=" + determineBranchAndTimestamp());
+            System.out.println(
+                    "More detailed information about these metrics is available in Teamscale's web interface at " +
+                            urlBuilder.build());
+        }
+        return metricResult;
     }
 
     private void initDefaultOptions() {
