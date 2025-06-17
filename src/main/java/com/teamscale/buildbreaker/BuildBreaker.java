@@ -131,23 +131,53 @@ public class BuildBreaker implements Callable<Integer> {
                 description = "Fail on findings in modified code (not just new findings). Can only be used if --evaluate-findings is active.")
         public boolean failOnModified;
 
-        /**
-         * The target branch to compare with
-         */
-        @Option(names = {"--target-commit"},
-                description = "The commit to compare with using Teamscale's branch merge delta service. If specified, findings will be evaluated based on what would happen if the commit specified via --commit would be merged into this commit.")
-        // TODO validation
-        public String targetCommit;
+        @ArgGroup(exclusive = true, multiplicity = "1")
+        private TargetCommitOptions targetCommitOptions;
 
-        /**
-         * The target branch to compare with
-         */
-        @Option(names = {"--base-commit"},
-                description = "The base commit to compare with using Teamscale's linear delta service. The commit needs to be a parent of the one specified via --commit. If specified, findings of all commits in between the two will be evaluated.")
-        // TODO validation
-        // TODO readme doc
-        // TODO this cannot handle commit hashes, should it? Maybe add a second option as for --commit and --branch-and-timestamp?
-        public String baseCommit;
+        private static class TargetCommitOptions {
+            /**
+             * The target branch to compare with
+             */
+            @Option(names = {"--target-commit"},
+                    description = "The commit to compare with using Teamscale's branch merge delta service. If specified, findings will be evaluated based on what would happen if the commit specified via --commit would be merged into this commit.")
+            // TODO description and readme
+            public String targetCommit;
+
+            private String targetBranchAndTimestamp;
+
+            // TODO description & README
+            @Option(names = {"--target-branch-and-timestamp"},
+                    description = "TODO")
+            public void setTargetBranchAndTimestamp(String targetBranchAndTimestamp) {
+                validateBranchAndTimestamp(targetBranchAndTimestamp, "--target-branch-and-timestamp");
+                this.targetBranchAndTimestamp = targetBranchAndTimestamp;
+            }
+        }
+
+        //        @ArgGroup(exclusive = true, multiplicity = "1")
+        private BaseCommitOptions baseCommitOptions;
+
+        private static class BaseCommitOptions {
+            /**
+             * The target branch to compare with
+             */
+            @Option(names = {"--base-commit"},
+                    description = "The base commit to compare with using Teamscale's linear delta service. The commit needs to be a parent of the one specified via --commit. If specified, findings of all commits in between the two will be evaluated.")
+            // TODO validation
+            // TODO readme doc
+            // TODO this cannot handle commit hashes, should it? Maybe add a second option as for --commit and --branch-and-timestamp?
+            public String baseCommit;
+
+            private String baseBranchAndTimestamp;
+
+            // TODO description & README
+            @Option(names = {"--base-branch-and-timestamp"},
+                    description = "TODO")
+            public void setBaseBranchAndTimestamp(String baseBranchAndTimestamp) {
+                validateBranchAndTimestamp(baseBranchAndTimestamp, "--base-branch-and-timestamp");
+                this.baseBranchAndTimestamp = baseBranchAndTimestamp;
+            }
+        }
     }
 
     /**
@@ -181,7 +211,7 @@ public class BuildBreaker implements Callable<Integer> {
                         " the latest revision on that branch." + "\nFormat: BRANCH:TIMESTAMP" +
                         "\nExample: master:1597845930000" + "\nExample: develop:HEAD")
         public void setBranchAndTimestamp(String branchAndTimestamp) {
-            validateBranchAndTimestamp(branchAndTimestamp);
+            validateBranchAndTimestamp(branchAndTimestamp, "-b, --branch-and-timestamp");
             this.branchAndTimestamp = branchAndTimestamp;
         }
 
@@ -193,52 +223,6 @@ public class BuildBreaker implements Callable<Integer> {
                         " This is typically the commit that the current CI pipeline is building." +
                         " Can be either a Git SHA1, a SVN revision number or a Team Foundation changeset ID.")
         private String commit;
-
-        private void validateBranchAndTimestamp(String branchAndTimestamp) throws ParameterException {
-            if (StringUtils.isEmpty(branchAndTimestamp)) {
-                return;
-            }
-
-            String[] parts = branchAndTimestamp.split(":", 2);
-            if (parts.length == 1) {
-                throw new ParameterException(spec.commandLine(),
-                        "You specified an invalid branch and timestamp" + " with --branch-and-timestamp: " +
-                                branchAndTimestamp + "\nYou must  use the" +
-                                " format BRANCH:TIMESTAMP, where TIMESTAMP is a Unix timestamp in milliseconds" +
-                                " or the string 'HEAD' (to upload to the latest commit on that branch).");
-            }
-
-            String timestampPart = parts[1];
-            if (timestampPart.equalsIgnoreCase("HEAD")) {
-                return;
-            }
-
-            validateTimestamp(timestampPart);
-        }
-
-        private void validateTimestamp(String timestampPart) throws ParameterException {
-            try {
-                long unixTimestamp = Long.parseLong(timestampPart);
-                if (unixTimestamp < 10000000000L) {
-                    String millisecondDate = DateTimeFormatter.RFC_1123_DATE_TIME
-                            .format(Instant.ofEpochMilli(unixTimestamp).atZone(ZoneOffset.UTC));
-                    String secondDate = DateTimeFormatter.RFC_1123_DATE_TIME
-                            .format(Instant.ofEpochSecond(unixTimestamp).atZone(ZoneOffset.UTC));
-                    throw new ParameterException(spec.commandLine(),
-                            "You specified an invalid timestamp with" + " --branch-and-timestamp. The timestamp '" +
-                                    timestampPart + "'" + " is equal to " + millisecondDate +
-                                    ". This is probably not what" +
-                                    " you intended. Most likely you specified the timestamp in seconds," +
-                                    " instead of milliseconds. If you use " + timestampPart + "000" +
-                                    " instead, it will mean " + secondDate);
-                }
-            } catch (NumberFormatException e) {
-                throw new ParameterException(spec.commandLine(), "You specified an invalid timestamp with" +
-                        " --branch-and-timestamp. Expected either 'HEAD' or a unix timestamp" +
-                        " in milliseconds since 00:00:00 UTC Thursday, 1 January 1970, e.g." +
-                        " master:1606743774000\nInstead you used: " + timestampPart);
-            }
-        }
     }
 
     private TeamscaleClient teamscaleClient;
@@ -351,21 +335,75 @@ public class BuildBreaker implements Callable<Integer> {
 
     }
 
-    private EvaluationResult evaluateFindings() throws IOException {
-        if (!StringUtils.isEmpty(findingEvalOptions.targetCommit) && !StringUtils.isEmpty(findingEvalOptions.baseCommit)) {
-            throw new InvalidParametersException("Cannot use both --target-commit and --base-commit options at the same time.");
-        }
-        if (StringUtils.isEmpty(findingEvalOptions.targetCommit) && StringUtils.isEmpty(findingEvalOptions.baseCommit)) {
-            System.out.println("Evaluating findings for the current commit...");
-        } else if (!StringUtils.isEmpty(findingEvalOptions.targetCommit)) {
-            System.out.println("Evaluating findings by comparing the current commit with target commit '" +
-                    findingEvalOptions.targetCommit + "'...");
-        } else {
-            System.out.println("Evaluating findings by aggregating the findings from the base commit '" +
-                    findingEvalOptions.baseCommit + "'...");
+    private static void validateBranchAndTimestamp(String branchAndTimestamp, String parameterName) throws ParameterException {
+        if (StringUtils.isEmpty(branchAndTimestamp)) {
+            return;
         }
 
-        Pair<List<Finding>, List<Finding>> findingAssessments = fetchFindings();
+        String[] parts = branchAndTimestamp.split(":", 2);
+        if (parts.length == 1) {
+            throw new ParameterException(spec.commandLine(),
+                    "You specified an invalid branch and timestamp" + " with " + parameterName + ": " +
+                            branchAndTimestamp + "\nYou must  use the" +
+                            " format BRANCH:TIMESTAMP, where TIMESTAMP is a Unix timestamp in milliseconds" +
+                            " or the string 'HEAD' (to upload to the latest commit on that branch).");
+        }
+
+        String timestampPart = parts[1];
+        if (timestampPart.equalsIgnoreCase("HEAD")) {
+            return;
+        }
+
+        validateTimestamp(timestampPart, parameterName);
+    }
+
+    private static void validateTimestamp(String timestampPart, String parameterName) throws ParameterException {
+        try {
+            long unixTimestamp = Long.parseLong(timestampPart);
+            if (unixTimestamp < 10000000000L) {
+                String millisecondDate = DateTimeFormatter.RFC_1123_DATE_TIME
+                        .format(Instant.ofEpochMilli(unixTimestamp).atZone(ZoneOffset.UTC));
+                String secondDate = DateTimeFormatter.RFC_1123_DATE_TIME
+                        .format(Instant.ofEpochSecond(unixTimestamp).atZone(ZoneOffset.UTC));
+                throw new ParameterException(spec.commandLine(),
+                        "You specified an invalid timestamp with " + parameterName + ". The timestamp '" +
+                                timestampPart + "'" + " is equal to " + millisecondDate +
+                                ". This is probably not what" +
+                                " you intended. Most likely you specified the timestamp in seconds," +
+                                " instead of milliseconds. If you use " + timestampPart + "000" +
+                                " instead, it will mean " + secondDate);
+            }
+        } catch (NumberFormatException e) {
+            throw new ParameterException(spec.commandLine(), "You specified an invalid timestamp with " + parameterName +
+                    ". Expected either 'HEAD' or a unix timestamp" +
+                    " in milliseconds since 00:00:00 UTC Thursday, 1 January 1970, e.g." +
+                    " master:1606743774000\nInstead you used: " + timestampPart);
+        }
+    }
+
+    private EvaluationResult evaluateFindings() throws IOException {
+        String currentBranchAndTimestamp = determineBranchAndTimestamp();
+        String targetBranchAndTimestamp = determineTargetBranchAndTimestamp();
+        String baseBranchAndTimestamp = determineBaseBranchAndTimestamp();
+
+        if (!StringUtils.isEmpty(targetBranchAndTimestamp) && !StringUtils.isEmpty(baseBranchAndTimestamp)) {
+            throw new InvalidParametersException("Cannot use both --target-commit/--target-branch-and-timestamp and --base-commit/--base-branch-and-timestamp options at the same time.");
+        }
+
+        Pair<List<Finding>, List<Finding>> findingAssessments;
+        if (StringUtils.isEmpty(targetBranchAndTimestamp) && StringUtils.isEmpty(baseBranchAndTimestamp)) {
+            System.out.println("Evaluating findings for the current commit...");
+            findingAssessments = teamscaleClient.fetchFindingsUsingCommitDetails(currentBranchAndTimestamp);
+        } else if (!StringUtils.isEmpty(targetBranchAndTimestamp)) {
+            System.out.println("Evaluating findings by comparing the current commit with target commit '" +
+                    targetBranchAndTimestamp + "'...");
+            findingAssessments = teamscaleClient.fetchFindingsUsingBranchMergeDelta(currentBranchAndTimestamp, targetBranchAndTimestamp);
+        } else {
+            System.out.println("Evaluating findings by aggregating the findings from the base commit '" +
+                    baseBranchAndTimestamp + "'...");
+            findingAssessments = teamscaleClient.fetchFindingsUsingLinearDelta(baseBranchAndTimestamp, currentBranchAndTimestamp);
+        }
+
         EvaluationResult findingsResult = new FindingsEvaluator()
                 .evaluate(findingAssessments, findingEvalOptions.failOnYellowFindings,
                         findingEvalOptions.failOnModified);
@@ -373,11 +411,14 @@ public class BuildBreaker implements Callable<Integer> {
 
         if (findingsResult.toStatusCode() > 0) {
             HttpUrl.Builder urlBuilder;
-
-            if (!StringUtils.isEmpty(findingEvalOptions.targetCommit)) {
+            if (StringUtils.isEmpty(targetBranchAndTimestamp) && StringUtils.isEmpty(baseBranchAndTimestamp)) {
+                // For single commit evaluation, link to activity.html
+                urlBuilder = teamscaleServerUrl.newBuilder()
+                        .addPathSegment("activity.html")
+                        .fragment("details/" + project + "?t=" + currentBranchAndTimestamp);
+            } else if (!StringUtils.isEmpty(targetBranchAndTimestamp)) {
                 // For branch comparison, link to delta
-                String sourceBranchHead = determineBranchAndTimestamp();
-                String targetBranchAndTimestamp = findingEvalOptions.targetCommit;
+                String sourceBranchHead = currentBranchAndTimestamp;
                 urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta")
                         .addPathSegment("findings")
                         .addPathSegment(project)
@@ -386,11 +427,8 @@ public class BuildBreaker implements Callable<Integer> {
                         .addQueryParameter("showMergeFindings", "true")
                         .addQueryParameter("finding-section", "1") // Show red findings section
                         .addQueryParameter("filter-option", "EXCLUDED"); // Hide flagged findings
-
-            } else if (!StringUtils.isEmpty(findingEvalOptions.baseCommit)) {
+            } else {
                 // For branch comparison, link to delta.html
-                String currentBranchAndTimestamp = determineBranchAndTimestamp();
-                String baseBranchAndTimestamp = findingEvalOptions.baseCommit;
                 urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta")
                         .addPathSegment("findings")
                         .addPathSegment(project)
@@ -398,10 +436,6 @@ public class BuildBreaker implements Callable<Integer> {
                         .addQueryParameter("to", currentBranchAndTimestamp)
                         .addQueryParameter("finding-section", "1") // Show red findings section
                         .addQueryParameter("filter-option", "EXCLUDED"); // Hide flagged findings
-            } else {
-                // For single commit evaluation, link to activity.html
-                urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("activity.html")
-                        .fragment("details/" + project + "?t=" + determineBranchAndTimestamp());
             }
 
             System.out.println(
@@ -414,13 +448,14 @@ public class BuildBreaker implements Callable<Integer> {
 
     private EvaluationResult evaluateMetrics() throws IOException {
         System.out.println("Evaluating thresholds...");
-        List<MetricViolation> metricAssessments = teamscaleClient.fetchMetricAssessments(determineBranchAndTimestamp(), thresholdEvalOptions.thresholdConfig);
+        String currentBranchAndTimestamp = determineBranchAndTimestamp();
+        List<MetricViolation> metricAssessments = teamscaleClient.fetchMetricAssessments(currentBranchAndTimestamp, thresholdEvalOptions.thresholdConfig);
         EvaluationResult metricResult =
                 new MetricsEvaluator().evaluate(metricAssessments, thresholdEvalOptions.failOnYellowMetrics);
         System.out.println(metricResult);
         if (metricResult.toStatusCode() > 0) {
             HttpUrl.Builder urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("metrics.html")
-                    .fragment("/" + project + "?t=" + determineBranchAndTimestamp());
+                    .fragment("/" + project + "?t=" + currentBranchAndTimestamp);
             System.out.println(
                     "More detailed information about these metrics is available in Teamscale's web interface at " +
                             urlBuilder.build());
@@ -437,18 +472,6 @@ public class BuildBreaker implements Callable<Integer> {
         }
         if (thresholdEvalOptions == null) {
             thresholdEvalOptions = new ThresholdEvalOptions();
-        }
-    }
-
-    private Pair<List<Finding>, List<Finding>> fetchFindings() throws IOException {
-        if (!StringUtils.isEmpty(findingEvalOptions.targetCommit)) {
-            // Use the delta service when a target branch is specified
-            return teamscaleClient.fetchFindingsUsingBranchMergeDelta(determineBranchAndTimestamp(), findingEvalOptions.targetCommit);
-        } else if (!StringUtils.isEmpty(findingEvalOptions.baseCommit)) {
-            return teamscaleClient.fetchFindingsUsingLinearDelta(findingEvalOptions.baseCommit, determineBranchAndTimestamp());
-        } else {
-            // Use the original finding-churn/list endpoint when no target branch is specified
-            return teamscaleClient.fetchFindingsUsingCommitDetails(determineBranchAndTimestamp());
         }
     }
 
@@ -489,6 +512,26 @@ public class BuildBreaker implements Callable<Integer> {
             }
 
             return teamscaleClient.fetchTimestampForRevision(commit);
+        }
+    }
+
+    private String determineTargetBranchAndTimestamp() throws IOException {
+        if (!StringUtils.isEmpty(findingEvalOptions.targetCommitOptions.targetCommit)) {
+            return teamscaleClient.fetchTimestampForRevision(findingEvalOptions.targetCommitOptions.targetCommit);
+        } else if (!StringUtils.isEmpty(findingEvalOptions.targetCommitOptions.targetBranchAndTimestamp)) {
+            return findingEvalOptions.targetCommitOptions.targetBranchAndTimestamp;
+        } else {
+            throw new IllegalStateException("Tried to compare against a target commit but could not determine the commit. Call: " + spec.commandLine());
+        }
+    }
+
+    private String determineBaseBranchAndTimestamp() throws IOException {
+        if (!StringUtils.isEmpty(findingEvalOptions.baseCommitOptions.baseCommit)) {
+            return teamscaleClient.fetchTimestampForRevision(findingEvalOptions.baseCommitOptions.baseCommit);
+        } else if (!StringUtils.isEmpty(findingEvalOptions.baseCommitOptions.baseBranchAndTimestamp)) {
+            return findingEvalOptions.baseCommitOptions.baseBranchAndTimestamp;
+        } else {
+            throw new IllegalStateException("Tried to compare against a base commit but could not determine the commit. Call: " + spec.commandLine());
         }
     }
 
