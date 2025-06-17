@@ -9,6 +9,7 @@ import com.teamscale.buildbreaker.evaluation.MetricViolation;
 import com.teamscale.buildbreaker.evaluation.ProblemCategory;
 import com.teamscale.buildbreaker.exceptions.AnalysisNotFinishedException;
 import com.teamscale.buildbreaker.exceptions.CommitCouldNotBeResolvedException;
+import com.teamscale.buildbreaker.exceptions.ParserException;
 import com.teamscale.buildbreaker.exceptions.TooManyCommitsException;
 import okhttp3.Credentials;
 import okhttp3.HttpUrl;
@@ -76,7 +77,7 @@ public class TeamscaleClient implements AutoCloseable {
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String response = sendRequest(url, request);
-        return parseFindingResponse(response, "$.addedFindings.*", "$.findingsInChangedCode.*");
+        return parseFindingResponse(response);
     }
 
 
@@ -95,7 +96,7 @@ public class TeamscaleClient implements AutoCloseable {
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String response = sendRequest(url, request);
-        return parseFindingResponse(response, "$..addedFindings.*", "$..findingsInChangedCode.*");
+        return parseFindingResponse(response);
     }
 
     /**
@@ -118,7 +119,7 @@ public class TeamscaleClient implements AutoCloseable {
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String response = sendRequest(url, request);
-        return parseFindingResponse(response, "$..addedFindings.*", "$..findingsInChangedCode.*");
+        return parseFindingResponse(response);
     }
 
     public List<MetricViolation> fetchMetricAssessments(String branchAndTimestamp, String thresholdConfig) throws IOException {
@@ -200,24 +201,32 @@ public class TeamscaleClient implements AutoCloseable {
         }
     }
 
-    private Pair<List<Finding>, List<Finding>> parseFindingResponse(String response, String addedFindingsPredicate, String findingsInChangedCodePredicate) {
+    private Pair<List<Finding>, List<Finding>> parseFindingResponse(String response) throws ParserException {
         DocumentContext findingsJson = JsonPath.parse(response);
         Pair<List<Finding>, List<Finding>> result = Pair.createPair(new ArrayList<>(), new ArrayList<>());
-        result.getFirst().addAll(parseFindings(findingsJson.read(addedFindingsPredicate)));
-        result.getSecond().addAll(parseFindings(findingsJson.read(findingsInChangedCodePredicate)));
+        try {
+            result.getFirst().addAll(parseFindings(findingsJson.read("$.addedFindings.*")));
+            result.getSecond().addAll(parseFindings(findingsJson.read("$.findingsInChangedCode.*")));
+        } catch (IOException e) {
+            throw new ParserException("Could not parse JSON response:\n" + response + "\n\nPlease contact CQSE with an error report.", e);
+        }
         return result;
     }
 
-    private static List<Finding> parseFindings(List<Map<String, Object>> addedFindings) {
-        return addedFindings.stream().map(findingMap -> {
-            String id = findingMap.get("id").toString();
-            String group = findingMap.get("groupName").toString();
-            String category = findingMap.get("categoryName").toString();
-            String message = findingMap.get("message").toString();
-            String uniformPath = ((Map<String, String>) findingMap.getOrDefault("location", new HashMap<>())).getOrDefault("uniformPath", "<undefined>");
-            ProblemCategory assessment = ProblemCategory.fromRatingString((String) findingMap.get("assessment"));
-            return new Finding(id, group, category, message, uniformPath, assessment);
-        }).collect(Collectors.toList());
+    private static List<Finding> parseFindings(List<Map<String, Object>> addedFindings) throws ParserException{
+        try {
+            return addedFindings.stream().map(findingMap -> {
+                String id = findingMap.get("id").toString();
+                String group = findingMap.get("groupName").toString();
+                String category = findingMap.get("categoryName").toString();
+                String message = findingMap.get("message").toString();
+                String uniformPath = ((Map<String, String>) findingMap.getOrDefault("location", new HashMap<>())).getOrDefault("uniformPath", "<undefined>");
+                ProblemCategory assessment = ProblemCategory.fromRatingString((String) findingMap.get("assessment"));
+                return new Finding(id, group, category, message, uniformPath, assessment);
+            }).collect(Collectors.toList());
+        } catch (ClassCastException e) {
+            throw new ParserException(e);
+        }
     }
 
     private String extractTimestamp(String commitDescriptorsJson) {
