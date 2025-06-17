@@ -8,7 +8,6 @@ import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
 import com.teamscale.buildbreaker.evaluation.Finding;
 import com.teamscale.buildbreaker.evaluation.MetricViolation;
 import com.teamscale.buildbreaker.evaluation.ProblemCategory;
-import com.teamscale.buildbreaker.exceptions.AnalysisNotFinishedException;
 import com.teamscale.buildbreaker.exceptions.CommitCouldNotBeResolvedException;
 import com.teamscale.buildbreaker.exceptions.ParserException;
 import com.teamscale.buildbreaker.exceptions.TooManyCommitsException;
@@ -24,10 +23,6 @@ import org.conqat.lib.commons.string.StringUtils;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.UnknownHostException;
-import java.time.Duration;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -130,6 +125,7 @@ public class TeamscaleClient implements AutoCloseable {
 
     /**
      * TODO
+     *
      * @param branchAndTimestamp
      * @param thresholdConfig
      * @return
@@ -152,6 +148,7 @@ public class TeamscaleClient implements AutoCloseable {
 
     /**
      * TODO
+     *
      * @param revision
      * @return
      * @throws IOException
@@ -212,6 +209,7 @@ public class TeamscaleClient implements AutoCloseable {
 
     /**
      * TODO
+     *
      * @param branch
      * @param timestamp
      * @return
