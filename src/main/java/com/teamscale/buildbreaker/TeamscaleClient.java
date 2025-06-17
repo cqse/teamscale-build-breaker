@@ -92,7 +92,9 @@ public class TeamscaleClient implements AutoCloseable {
      */
     public Pair<List<Finding>, List<Finding>> fetchFindingsUsingCommitDetails(String branchAndTimestamp) throws IOException {
         HttpUrl.Builder builder =
-                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
+                teamscaleServerUrl.newBuilder()
+                        .addPathSegments("api/projects")
+                        .addPathSegment(project)
                         .addPathSegments("finding-churn/list")
                         .addQueryParameter("t", branchAndTimestamp);
         HttpUrl url = builder.build();
@@ -112,7 +114,9 @@ public class TeamscaleClient implements AutoCloseable {
     public Pair<List<Finding>, List<Finding>> fetchFindingsUsingBranchMergeDelta(String sourceBranchAndTimestamp, String targetBranchAndTimestamp) throws IOException {
 
         HttpUrl.Builder builder =
-                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
+                teamscaleServerUrl.newBuilder()
+                        .addPathSegments("api/projects")
+                        .addPathSegment(project)
                         .addPathSegments("merge-requests/finding-churn")
                         .addQueryParameter("source", sourceBranchAndTimestamp)
                         .addQueryParameter("target", targetBranchAndTimestamp);
@@ -125,8 +129,11 @@ public class TeamscaleClient implements AutoCloseable {
 
     public List<MetricViolation> fetchMetricAssessments(String branchAndTimestamp, String thresholdConfig) throws IOException {
         HttpUrl.Builder builder =
-                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
-                        .addPathSegment("metric-assessments").addQueryParameter("uniform-path", "")
+                teamscaleServerUrl.newBuilder()
+                        .addPathSegments("api/projects")
+                        .addPathSegment(project)
+                        .addPathSegment("metric-assessments")
+                        .addQueryParameter("uniform-path", "")
                         .addQueryParameter("t", branchAndTimestamp)
                         .addQueryParameter("configuration-name", thresholdConfig);
         HttpUrl url = builder.build();
@@ -157,8 +164,12 @@ public class TeamscaleClient implements AutoCloseable {
             return timestampRevisionCache.get(revision);
         }
         HttpUrl.Builder builder =
-                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
-                        .addPathSegment("revision").addPathSegment(revision).addPathSegment("commits");
+                teamscaleServerUrl.newBuilder()
+                        .addPathSegments("api/projects")
+                        .addPathSegment(project)
+                        .addPathSegment("revision")
+                        .addPathSegment(revision)
+                        .addPathSegment("commits");
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String commitDescriptorsJson = sendRequest(url, request);
@@ -261,8 +272,11 @@ public class TeamscaleClient implements AutoCloseable {
 
     private boolean isAnalysisFinished(String branch, long timestamp) throws IOException {
         HttpUrl.Builder builder =
-                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
-                        .addPathSegment("branch-analysis-state").addPathSegment(branch);
+                teamscaleServerUrl.newBuilder()
+                        .addPathSegments("api/projects")
+                        .addPathSegment(project)
+                        .addPathSegment("branch-analysis-state")
+                        .addPathSegment(branch);
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String analysisStateJson = sendRequest(url, request);
@@ -293,7 +307,11 @@ public class TeamscaleClient implements AutoCloseable {
     }
 
     private Request createAuthenticatedGetRequest(HttpUrl url) {
-        return new Request.Builder().header("Authorization", Credentials.basic(user, accessKey)).url(url).get().build();
+        return new Request.Builder()
+                .header("Authorization", Credentials.basic(user, accessKey))
+                .url(url)
+                .get()
+                .build();
     }
 
     private void handleErrors(Response response) {
@@ -308,8 +326,11 @@ public class TeamscaleClient implements AutoCloseable {
         }
 
         if (response.code() == 401) {
-            HttpUrl editUserUrl = teamscaleServerUrl.newBuilder().addPathSegment("admin.html#users")
-                    .addQueryParameter("action", "edit").addQueryParameter("username", user).build();
+            HttpUrl editUserUrl = teamscaleServerUrl.newBuilder()
+                    .addPathSegment("admin.html#users")
+                    .addQueryParameter("action", "edit")
+                    .addQueryParameter("username", user)
+                    .build();
             fail("You provided incorrect credentials." + " Either the user '" + user + "' does not exist in Teamscale" +
                     " or the access key you provided is incorrect." +
                     " Please check both the username and access key in Teamscale under Admin > Users:" + " " +
@@ -326,7 +347,9 @@ public class TeamscaleClient implements AutoCloseable {
         }
 
         if (response.code() == 404) {
-            HttpUrl projectPerspectiveUrl = teamscaleServerUrl.newBuilder().addPathSegment("project.html").build();
+            HttpUrl projectPerspectiveUrl = teamscaleServerUrl.newBuilder()
+                    .addPathSegment("project.html")
+                    .build();
             fail("The project with ID or alias '" + project + "' does not seem to exist in Teamscale." +
                             " Please ensure that you used the project ID or the project alias, NOT the project name." +
                             " You can see the IDs of all projects at " + projectPerspectiveUrl +
@@ -348,7 +371,8 @@ public class TeamscaleClient implements AutoCloseable {
         if (StringUtils.isEmpty(repositoryUrl)) {
             return;
         }
-        HttpUrl.Builder builder = teamscaleServerUrl.newBuilder().addPathSegments("api/post-commit-hook")
+        HttpUrl.Builder builder = teamscaleServerUrl.newBuilder()
+                .addPathSegments("api/post-commit-hook")
                 .addQueryParameter("repository", repositoryUrl);
         HttpUrl url = builder.build();
         Request request = new Request.Builder().header("Authorization", Credentials.basic(user, accessKey)).url(url)
