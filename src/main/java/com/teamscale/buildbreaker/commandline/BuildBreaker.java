@@ -39,7 +39,6 @@ import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.function.Supplier;
 
-// TODO README updates
 @Command(name = "teamscale-buildbreaker", mixinStandardHelpOptions = true, version = "teamscale-buildbreaker 0.1",
         description = "Queries a Teamscale server for analysis results, evaluates them and emits a corresponding status code.",
         footer = "\nBy default, this tries to automatically detect the code commit" +

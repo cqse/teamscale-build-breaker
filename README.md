@@ -54,9 +54,25 @@ Whether to fail on findings in modified code (not just new findings).
 **--fail-on-yellow-findings**  
 Whether to fail on yellow findings (with exit code 2).
 
-**--target-branch**=*&lt;branch-name&gt;*  
-The target branch to compare with using Teamscale's delta service. If specified, findings will be evaluated by comparing
-the current branch with this target branch instead of just evaluating findings introduced in the current commit.
+**--target-revision**=*&lt;revision-hash&gt;*  
+The revision (hash) to compare with using Teamscale's branch merge delta service. If specified, findings will be
+evaluated based on what would happen if the commit specified via --commit would be merged into this commit. This will
+take precedence over --target-branch-and-timestamp.
+
+**--target-branch-and-timestamp**=*&lt;branch:timestamp&gt;*  
+The branch and timestamp to compare with using Teamscale's branch merge delta service. If specified, findings will be
+evaluated based on what would happen if the commit specified via --commit would be merged into this commit.
+--target-revision will take precedence over this option if provided.
+
+**--base-revision**=*&lt;revision-hash&gt;*  
+The base revision (hash) to compare with using Teamscale's linear delta service. The commit needs to be a parent of the
+one specified via --commit. If specified, findings of all commits in between the two will be evaluated. This will take
+precedence over --base-branch-and-timestamp.
+
+**--base-branch-and-timestamp**=*&lt;branch:timestamp&gt;*  
+The base branch and timestamp to compare with using Teamscale's linear delta service. The commit needs to be a parent of
+the one specified via --commit. If specified, findings of all commits in between the two will be evaluated.
+--base-revision will take precedence over this option if provided.
 
 **--fail-on-yellow-metrics**  
 Whether to fail on yellow metrics (with exit code 2).
@@ -119,7 +135,7 @@ To use this tool in a Jenkins pipeline, complete the following steps:
 
        pipeline {
           agent any
-          
+
           stages {
               stage ('Teamscale Analysis') {
                   steps {
