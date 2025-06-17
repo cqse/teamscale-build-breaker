@@ -39,7 +39,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-// TODO return actual objects in the findings and metric fetching methods
+/**
+ * TODO
+ */
 public class TeamscaleClient implements AutoCloseable {
     private final OkHttpClient client;
     private final HttpUrl teamscaleServerUrl;
