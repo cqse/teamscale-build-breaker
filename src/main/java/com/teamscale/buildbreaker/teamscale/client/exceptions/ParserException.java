@@ -1,4 +1,4 @@
-package com.teamscale.buildbreaker.client.exceptions;
+package com.teamscale.buildbreaker.teamscale.client.exceptions;
 
 public class ParserException extends Exception {
     public ParserException(String message, Throwable cause) {

@@ -4,7 +4,7 @@ import picocli.CommandLine;
 
 import static com.teamscale.buildbreaker.commandline.BranchAndTimestampUtils.validateBranchAndTimestamp;
 
-public class FindingEvalOptions {
+class FindingEvalOptions {
     @CommandLine.Option(names = {"-f", "--evaluate-findings"}, required = true,
             description = "If this option is set, findings introduced with the given commit will be evaluated.")
     public boolean evaluateFindings;

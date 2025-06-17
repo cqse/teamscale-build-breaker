@@ -1,4 +1,4 @@
-package com.teamscale.buildbreaker.client.exceptions;
+package com.teamscale.buildbreaker.teamscale.client.exceptions;
 
 public class TooManyCommitsException extends CommitResolutionExceptionBase {
     private final String commitDescriptorsJson;

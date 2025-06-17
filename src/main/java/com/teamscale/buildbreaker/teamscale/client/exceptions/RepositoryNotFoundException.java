@@ -1,4 +1,4 @@
-package com.teamscale.buildbreaker.client.exceptions;
+package com.teamscale.buildbreaker.teamscale.client.exceptions;
 
 public class RepositoryNotFoundException extends Exception {
 }

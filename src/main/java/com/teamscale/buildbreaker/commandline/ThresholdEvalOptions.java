@@ -2,7 +2,7 @@ package com.teamscale.buildbreaker.commandline;
 
 import picocli.CommandLine;
 
-public class ThresholdEvalOptions {
+class ThresholdEvalOptions {
     @CommandLine.Option(names = {"-t", "--evaluate-thresholds"}, required = true,
             description = "If this option is set, metrics from a given threshold profile will be evaluated.")
     public boolean evaluateThresholds;
