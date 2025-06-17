@@ -1,4 +1,4 @@
-package com.teamscale.buildbreaker;
+package com.teamscale.buildbreaker.client;
 
 import com.teamscale.buildbreaker.exceptions.BuildBreakerInternalException;
 import com.teamscale.buildbreaker.exceptions.KeystoreException;

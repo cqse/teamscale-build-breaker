@@ -1,4 +1,4 @@
-package com.teamscale.buildbreaker;
+package com.teamscale.buildbreaker.client;
 
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
@@ -36,7 +36,9 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
- * TODO
+ * This class acts as a client for interacting with the Teamscale API.
+ * It provides methods for retrieving findings, metric violations, and synchronizing information
+ * about repository changes with the Teamscale server.
  */
 public class TeamscaleClient implements AutoCloseable {
     private final OkHttpClient client;
@@ -57,34 +59,7 @@ public class TeamscaleClient implements AutoCloseable {
     }
 
     /**
-     * TODO
-     *
-     * @param startBranchAndTimestamp
-     * @param endBranchAndTimestamp
-     * @return pair of added and changed findings (that order)
-     * @throws IOException
-     */
-    public Pair<List<Finding>, List<Finding>> fetchFindingsUsingLinearDelta(String startBranchAndTimestamp, String endBranchAndTimestamp) throws IOException {
-        HttpUrl.Builder builder =
-                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
-                        .addPathSegments("findings/delta")
-                        .addQueryParameter("t2", endBranchAndTimestamp)
-                        .addQueryParameter("t1", startBranchAndTimestamp)
-                        .addQueryParameter("uniform-path", "");
-
-        HttpUrl url = builder.build();
-        Request request = createAuthenticatedGetRequest(url);
-        String response = sendRequest(url, request);
-        return parseFindingResponse(response);
-    }
-
-
-    /**
-     * TODO
-     *
-     * @param branchAndTimestamp
-     * @return
-     * @throws IOException
+     * @return a pair with added findings (first) and findings in changed code (second) received via the findings-churn api for a single commit ({@code api/projects/{project}/finding-churn/list}).
      */
     public Pair<List<Finding>, List<Finding>> fetchFindingsUsingCommitDetails(String branchAndTimestamp) throws IOException {
         HttpUrl.Builder builder =
@@ -100,12 +75,24 @@ public class TeamscaleClient implements AutoCloseable {
     }
 
     /**
-     * TODO
-     *
-     * @param sourceBranchAndTimestamp
-     * @param targetBranchAndTimestamp
-     * @return
-     * @throws IOException
+     * @return a pair with added findings (first) and findings in changed code (second) received via the linear delta endpoint ({@code /api/projects/{project}/findings/delta}).
+     */
+    public Pair<List<Finding>, List<Finding>> fetchFindingsUsingLinearDelta(String startBranchAndTimestamp, String endBranchAndTimestamp) throws IOException {
+        HttpUrl.Builder builder =
+                teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
+                        .addPathSegments("findings/delta")
+                        .addQueryParameter("t2", endBranchAndTimestamp)
+                        .addQueryParameter("t1", startBranchAndTimestamp)
+                        .addQueryParameter("uniform-path", "");
+
+        HttpUrl url = builder.build();
+        Request request = createAuthenticatedGetRequest(url);
+        String response = sendRequest(url, request);
+        return parseFindingResponse(response);
+    }
+
+    /**
+     * @return a pair with added findings (first) and findings in changed code (second) received via the branch merge delta endpoint ({@code /api/projects/{project}/merge-requests/findings-churn}).
      */
     public Pair<List<Finding>, List<Finding>> fetchFindingsUsingBranchMergeDelta(String sourceBranchAndTimestamp, String targetBranchAndTimestamp) throws IOException {
 
@@ -124,12 +111,7 @@ public class TeamscaleClient implements AutoCloseable {
     }
 
     /**
-     * TODO
-     *
-     * @param branchAndTimestamp
-     * @param thresholdConfig
-     * @return
-     * @throws IOException
+     * @return a list of metric violations received from the metric assessment endpoint ({@code api/projects/{project}/metric-assessments}).
      */
     public List<MetricViolation> fetchMetricAssessments(String branchAndTimestamp, String thresholdConfig) throws IOException {
         HttpUrl.Builder builder =
@@ -147,11 +129,7 @@ public class TeamscaleClient implements AutoCloseable {
     }
 
     /**
-     * TODO
-     *
-     * @param revision
-     * @return
-     * @throws IOException
+     * @return {@code branch:timestamp} for the given revision received via the {@code /api/projects/{project}/revision/{revision}/commits} endpoint.
      */
     public String fetchTimestampForRevision(String revision) throws IOException {
         if (timestampRevisionCache.containsKey(revision)) {
@@ -208,12 +186,7 @@ public class TeamscaleClient implements AutoCloseable {
     }
 
     /**
-     * TODO
-     *
-     * @param branch
-     * @param timestamp
-     * @return
-     * @throws IOException
+     * @return whether the analysis has reached the given timestamp on the given branch already
      */
     public boolean isTeamscaleAnalysisFinished(String branchAndTimestampToWaitFor) throws IOException {
         try {

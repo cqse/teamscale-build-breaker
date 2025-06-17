@@ -1,8 +1,10 @@
-package com.teamscale.buildbreaker;
+package com.teamscale.buildbreaker.commandline;
 
 import com.teamscale.buildbreaker.autodetect_revision.EnvironmentVariableChecker;
 import com.teamscale.buildbreaker.autodetect_revision.GitChecker;
 import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
+import com.teamscale.buildbreaker.client.OkHttpClientUtils;
+import com.teamscale.buildbreaker.client.TeamscaleClient;
 import com.teamscale.buildbreaker.evaluation.EvaluationResult;
 import com.teamscale.buildbreaker.evaluation.Finding;
 import com.teamscale.buildbreaker.evaluation.FindingsEvaluator;
@@ -28,7 +30,6 @@ import picocli.CommandLine.Spec;
 import javax.net.ssl.SSLHandshakeException;
 import java.io.IOException;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -38,6 +39,7 @@ import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.function.Supplier;
 
+// TODO README updates
 @Command(name = "teamscale-buildbreaker", mixinStandardHelpOptions = true, version = "teamscale-buildbreaker 0.1",
         description = "Queries a Teamscale server for analysis results, evaluates them and emits a corresponding status code.",
         footer = "\nBy default, this tries to automatically detect the code commit" +
@@ -57,157 +59,7 @@ public class BuildBreaker implements Callable<Integer> {
     @Spec
     static CommandSpec spec;
 
-    /**
-     * The base URL of the Teamscale server
-     */
     private HttpUrl teamscaleServerUrl;
-
-    /**
-     * The ID or alias of the Teamscale project
-     */
-    @Option(names = {"-p", "--project"}, required = true,
-            description = "The project ID or alias (NOT the project name!) relevant for the analysis.")
-    private String project;
-
-    /**
-     * Whether to evaluate thresholds, and detail options for that evaluation
-     */
-    @ArgGroup(exclusive = false)
-    private ThresholdEvalOptions thresholdEvalOptions;
-
-    /**
-     * Caches the commit which should be analyzed.
-     */
-    String detectedCommit = null;
-
-    public static class ThresholdEvalOptions {
-        /**
-         * Whether to evaluate thresholds
-         */
-        @Option(names = {"-t", "--evaluate-thresholds"}, required = true,
-                description = "If this option is set, metrics from a given threshold profile will be evaluated.")
-        public boolean evaluateThresholds;
-
-        /**
-         * The threshold config to use
-         */
-        @Option(names = {"-o", "--threshold-config"}, required = true,
-                description = "The name of the threshold config that should be used. Needs to be set if --evaluate-thresholds is active.")
-        public String thresholdConfig;
-
-        /**
-         * Whether to fail on yellow metrics
-         */
-        @Option(names = {"--fail-on-yellow-metrics"},
-                description = "Whether to fail on yellow metrics (with exit code 2). Can only be used if --evaluate-thresholds is active.")
-        public boolean failOnYellowMetrics;
-    }
-
-    /**
-     * Whether to evaluate findings, and detail options for that evaluation
-     */
-    @ArgGroup(exclusive = false)
-    private FindingEvalOptions findingEvalOptions;
-
-    public static class FindingEvalOptions {
-        /**
-         * Whether to evaluate findings
-         */
-        @Option(names = {"-f", "--evaluate-findings"}, required = true,
-                description = "If this option is set, findings introduced with the given commit will be evaluated.")
-        public boolean evaluateFindings;
-
-        /**
-         * Whether to fail on yellow findings
-         */
-        @Option(names = {"--fail-on-yellow-findings"},
-                description = "Whether to fail on yellow findings (with exit code 2). Can only be used if --evaluate-findings is active.")
-        public boolean failOnYellowFindings;
-
-        /**
-         * Whether to fail on findings in modified code
-         */
-        @Option(names = {"--fail-on-modified-code-findings"},
-                description = "Fail on findings in modified code (not just new findings). Can only be used if --evaluate-findings is active.")
-        public boolean failOnModified;
-
-        // TODO Javadoc, description and readme
-        @Option(names = {"--target-commit"},
-                description = "The commit to compare with using Teamscale's branch merge delta service. If specified, findings will be evaluated based on what would happen if the commit specified via --commit would be merged into this commit.")
-        public String targetCommit;
-
-        private String targetBranchAndTimestamp;
-
-        // TODO Javadoc, description and readme
-        @Option(names = {"--target-branch-and-timestamp"},
-                description = "TODO")
-        public void setTargetBranchAndTimestamp(String targetBranchAndTimestamp) {
-            validateBranchAndTimestamp(targetBranchAndTimestamp, "--target-branch-and-timestamp");
-            this.targetBranchAndTimestamp = targetBranchAndTimestamp;
-        }
-
-        // TODO Javadoc, description and readme
-        @Option(names = {"--base-commit"},
-                description = "The base commit to compare with using Teamscale's linear delta service. The commit needs to be a parent of the one specified via --commit. If specified, findings of all commits in between the two will be evaluated.")
-        public String baseCommit;
-
-        private String baseBranchAndTimestamp;
-
-        // TODO Javadoc, description and readme
-        @Option(names = {"--base-branch-and-timestamp"},
-                description = "TODO")
-        public void setBaseBranchAndTimestamp(String baseBranchAndTimestamp) {
-            validateBranchAndTimestamp(baseBranchAndTimestamp, "--base-branch-and-timestamp");
-            this.baseBranchAndTimestamp = baseBranchAndTimestamp;
-        }
-    }
-
-    /**
-     * The username of the Teamscale user performing the query
-     */
-    private String user;
-
-    /**
-     * The access key of the Teamscale user performing the query
-     */
-    private String accessKey;
-
-    /**
-     * The options specifying the queried commit.
-     */
-    @ArgGroup(multiplicity = "1")
-    private CommitOptions commitOptions;
-
-    private static class CommitOptions {
-
-        /**
-         * The branch and timestamp info for the queried commit. May be <code>null</code>.
-         */
-        private String branchAndTimestamp;
-
-        @Option(names = {"-b", "--branch-and-timestamp"}, paramLabel = "<branch:timestamp>",
-                description = "The branch and Unix Epoch timestamp for which analysis results should be evaluated." +
-                        " This is typically the branch and commit timestamp of the commit that the current CI pipeline" +
-                        " is building. The timestamp must be milliseconds since" +
-                        " 00:00:00 UTC Thursday, 1 January 1970 or the string 'HEAD' to evaluate thresholds on" +
-                        " the latest revision on that branch." + "\nFormat: BRANCH:TIMESTAMP" +
-                        "\nExample: master:1597845930000" + "\nExample: develop:HEAD")
-        public void setBranchAndTimestamp(String branchAndTimestamp) {
-            validateBranchAndTimestamp(branchAndTimestamp, "-b, --branch-and-timestamp");
-            this.branchAndTimestamp = branchAndTimestamp;
-        }
-
-        /**
-         * The revision (hash) of the queried commit. May be <code>null</code>.
-         */
-        @Option(names = {"-c", "--commit"}, paramLabel = "<commit-revision>",
-                description = "The version control commit revision for which analysis results should be obtained." +
-                        " This is typically the commit that the current CI pipeline is building." +
-                        " Can be either a Git SHA1, a SVN revision number or a Team Foundation changeset ID.")
-        private String commit;
-    }
-
-    private TeamscaleClient teamscaleClient;
 
     @Option(names = {"-s", "--server"}, paramLabel = "<teamscale-server-url>", required = true,
             description = "The URL under which the Teamscale server can be reached.")
@@ -221,26 +73,29 @@ public class BuildBreaker implements Callable<Integer> {
 
     @Option(names = {"-u", "--user"}, required = true,
             description = "The user that performs the query. Requires VIEW permission on the queried project.")
-    public void setUser(String user) {
-        this.user = user;
-    }
+    private String user;
 
     @Option(names = {"-a", "--accesskey"}, paramLabel = "<accesskey>", required = true,
             description = "The IDE access key of the given user. Can be retrieved in Teamscale under Admin > Users.")
-    public void setAccessKey(String accessKey) {
-        this.accessKey = accessKey;
-    }
+    private String accessKey;
 
-    /**
-     * The duration to wait for Teamscale analysis of the commit to finish up.
-     */
+    @Option(names = {"-p", "--project"}, required = true,
+            description = "The project ID or alias (NOT the project name!) relevant for the analysis.")
+    private String project;
+
+    @ArgGroup(multiplicity = "1")
+    private CommitOptions commitOptions;
+
+    @ArgGroup(exclusive = false)
+    private ThresholdEvalOptions thresholdEvalOptions;
+
+    @ArgGroup(exclusive = false)
+    private FindingEvalOptions findingEvalOptions;
+
     @Option(names = {"--wait-for-analysis-timeout"}, paramLabel = "<iso-8601-duration>",
             description = "The duration this tool will wait for analysis of the given commit to be finished in Teamscale, given in ISO-8601 format (e.g., PT20m for 20 minutes or PT30s for 30 seconds). This is useful when Teamscale starts analyzing at the same time this tool is called, and analysis is not yet finished. Default value is 20 minutes.")
     public Duration waitForAnalysisTimeoutDuration = Duration.ofMinutes(20);
 
-    /**
-     * The URL of the remote repository used to send a commit hook event to Teamscale.
-     */
     @Option(names = {"--repository-url"}, paramLabel = "<remote-repository-url>",
             description = "The URL of the remote repository where the analyzed commit originated. This is required in case a commit hook event should be sent to Teamscale for this repository if the repository URL cannot be established from the build environment.")
     public String remoteRepositoryUrl;
@@ -248,32 +103,12 @@ public class BuildBreaker implements Callable<Integer> {
     @ArgGroup()
     private SslConnectionOptions sslConnectionOptions;
 
-    private static class SslConnectionOptions {
-        @Option(names = "--insecure",
-                description = "By default, SSL certificates are validated against the configured KeyStore." +
-                        " This flag disables validation which makes using this tool with self-signed certificates easier.")
-        private boolean disableSslValidation;
+    /**
+     * Caches the commit which should be analyzed.
+     */
+    String detectedCommit = null;
+    private TeamscaleClient teamscaleClient;
 
-        private String keyStorePath;
-
-        private String keyStorePassword;
-
-        @Option(names = "--trusted-keystore", paramLabel = "<keystore-path;password>",
-                description = "A Java KeyStore file and its corresponding password. The KeyStore contains" +
-                        " additional certificates that should be trusted when performing SSL requests." +
-                        " Separate the path from the password with a semicolon, e.g:" +
-                        "\n/path/to/keystore.jks;PASSWORD" +
-                        "\nThe path to the KeyStore must not contain a semicolon. Cannot be used in conjunction with --disable-ssl-validation.")
-        public void setKeyStorePathAndPassword(String keystoreAndPassword) {
-            String[] keystoreAndPasswordSplit = keystoreAndPassword.split(";", 2);
-            this.keyStorePath = keystoreAndPasswordSplit[0];
-            if (StringUtils.isEmpty(this.keyStorePath)) {
-                throw new ParameterException(spec.commandLine(), "You must supply a valid KeyStore path.");
-            }
-            this.keyStorePassword = keystoreAndPasswordSplit[1];
-        }
-
-    }
 
     public static void main(String... args) {
         // Just let PicoCLI handle everything. Main entry point for PicoCLI is the "call()" method.
@@ -317,59 +152,13 @@ public class BuildBreaker implements Callable<Integer> {
 
     }
 
-    private static void validateBranchAndTimestamp(String branchAndTimestamp, String parameterName) throws ParameterException {
-        if (StringUtils.isEmpty(branchAndTimestamp)) {
-            return;
-        }
-
-        String[] parts = branchAndTimestamp.split(":", 2);
-        if (parts.length == 1) {
-            throw new ParameterException(spec.commandLine(),
-                    "You specified an invalid branch and timestamp" + " with " + parameterName + ": " +
-                            branchAndTimestamp + "\nYou must  use the" +
-                            " format BRANCH:TIMESTAMP, where TIMESTAMP is a Unix timestamp in milliseconds" +
-                            " or the string 'HEAD' (to upload to the latest commit on that branch).");
-        }
-
-        String timestampPart = parts[1];
-        if (timestampPart.equalsIgnoreCase("HEAD")) {
-            return;
-        }
-
-        validateTimestamp(timestampPart, parameterName);
-    }
-
-    private static void validateTimestamp(String timestampPart, String parameterName) throws ParameterException {
-        try {
-            long unixTimestamp = Long.parseLong(timestampPart);
-            if (unixTimestamp < 10000000000L) {
-                String millisecondDate = DateTimeFormatter.RFC_1123_DATE_TIME
-                        .format(Instant.ofEpochMilli(unixTimestamp).atZone(ZoneOffset.UTC));
-                String secondDate = DateTimeFormatter.RFC_1123_DATE_TIME
-                        .format(Instant.ofEpochSecond(unixTimestamp).atZone(ZoneOffset.UTC));
-                throw new ParameterException(spec.commandLine(),
-                        "You specified an invalid timestamp with " + parameterName + ". The timestamp '" +
-                                timestampPart + "'" + " is equal to " + millisecondDate +
-                                ". This is probably not what" +
-                                " you intended. Most likely you specified the timestamp in seconds," +
-                                " instead of milliseconds. If you use " + timestampPart + "000" +
-                                " instead, it will mean " + secondDate);
-            }
-        } catch (NumberFormatException e) {
-            throw new ParameterException(spec.commandLine(), "You specified an invalid timestamp with " + parameterName +
-                    ". Expected either 'HEAD' or a unix timestamp" +
-                    " in milliseconds since 00:00:00 UTC Thursday, 1 January 1970, e.g." +
-                    " master:1606743774000\nInstead you used: " + timestampPart);
-        }
-    }
-
     private EvaluationResult evaluateFindings() throws IOException {
         String currentBranchAndTimestamp = determineBranchAndTimestamp();
         String targetBranchAndTimestamp = determineTargetBranchAndTimestamp();
         String baseBranchAndTimestamp = determineBaseBranchAndTimestamp();
 
         if (!StringUtils.isEmpty(targetBranchAndTimestamp) && !StringUtils.isEmpty(baseBranchAndTimestamp)) {
-            throw new InvalidParametersException("Cannot use both --target-commit/--target-branch-and-timestamp and --base-commit/--base-branch-and-timestamp options at the same time.");
+            throw new InvalidParametersException("Cannot use both --target-revision/--target-branch-and-timestamp and --base-revision/--base-branch-and-timestamp options at the same time.");
         }
 
         Pair<List<Finding>, List<Finding>> findingAssessments;
@@ -494,8 +283,8 @@ public class BuildBreaker implements Callable<Integer> {
     }
 
     private String determineTargetBranchAndTimestamp() throws IOException {
-        if (!StringUtils.isEmpty(findingEvalOptions.targetCommit)) {
-            return teamscaleClient.fetchTimestampForRevision(findingEvalOptions.targetCommit);
+        if (!StringUtils.isEmpty(findingEvalOptions.targetRevision)) {
+            return teamscaleClient.fetchTimestampForRevision(findingEvalOptions.targetRevision);
         } else if (!StringUtils.isEmpty(findingEvalOptions.targetBranchAndTimestamp)) {
             return findingEvalOptions.targetBranchAndTimestamp;
         } else {
@@ -504,8 +293,8 @@ public class BuildBreaker implements Callable<Integer> {
     }
 
     private String determineBaseBranchAndTimestamp() throws IOException {
-        if (!StringUtils.isEmpty(findingEvalOptions.baseCommit)) {
-            return teamscaleClient.fetchTimestampForRevision(findingEvalOptions.baseCommit);
+        if (!StringUtils.isEmpty(findingEvalOptions.baseRevision)) {
+            return teamscaleClient.fetchTimestampForRevision(findingEvalOptions.baseRevision);
         } else if (!StringUtils.isEmpty(findingEvalOptions.baseBranchAndTimestamp)) {
             return findingEvalOptions.baseBranchAndTimestamp;
         } else {
