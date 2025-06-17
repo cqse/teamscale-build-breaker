@@ -1,8 +1,5 @@
 package com.teamscale.buildbreaker.evaluation;
 
-/**
- * TODO
- */
 public class MetricViolation {
     public final String displayName;
     public final String yellowThreshold;
@@ -10,15 +7,6 @@ public class MetricViolation {
     public final String formattedTextValue;
     public final ProblemCategory rating;
 
-    /**
-     * TODO
-     *
-     * @param displayName
-     * @param yellowThreshold
-     * @param redThreshold
-     * @param formattedTextValue
-     * @param rating
-     */
     public MetricViolation(String displayName, String yellowThreshold, String redThreshold, String formattedTextValue, ProblemCategory rating) {
         this.displayName = displayName;
         this.yellowThreshold = yellowThreshold;
