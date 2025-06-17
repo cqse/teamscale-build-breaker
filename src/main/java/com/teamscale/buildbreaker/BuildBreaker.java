@@ -394,12 +394,10 @@ public class BuildBreaker implements Callable<Integer> {
         if (findingsResult.toStatusCode() > 0) {
             HttpUrl.Builder urlBuilder;
             if (StringUtils.isEmpty(targetBranchAndTimestamp) && StringUtils.isEmpty(baseBranchAndTimestamp)) {
-                // For single commit evaluation, link to activity.html
                 urlBuilder = teamscaleServerUrl.newBuilder()
                         .addPathSegment("activity.html")
                         .fragment("details/" + project + "?t=" + currentBranchAndTimestamp);
             } else if (!StringUtils.isEmpty(targetBranchAndTimestamp)) {
-                // For branch comparison, link to delta
                 urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta")
                         .addPathSegment("findings")
                         .addPathSegment(project)
@@ -409,7 +407,6 @@ public class BuildBreaker implements Callable<Integer> {
                         .addQueryParameter("finding-section", "1") // Show red findings section
                         .addQueryParameter("filter-option", "EXCLUDED"); // Hide flagged findings
             } else {
-                // For branch comparison, link to delta.html
                 urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta")
                         .addPathSegment("findings")
                         .addPathSegment(project)
