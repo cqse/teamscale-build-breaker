@@ -2,9 +2,6 @@ package com.teamscale.buildbreaker.evaluation;
 
 import java.util.List;
 
-/**
- * TODO
- */
 public class MetricsEvaluator {
 
     public EvaluationResult evaluate(List<MetricViolation> metricViolations, boolean failOnYellow) {

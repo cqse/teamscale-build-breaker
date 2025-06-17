@@ -5,9 +5,6 @@ import org.conqat.lib.commons.collections.Pair;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * TODO
- */
 public class FindingsEvaluator {
 
     public EvaluationResult evaluate(Pair<List<Finding>, List<Finding>> findings, boolean failOnYellowFindings, boolean includeChangedCode) {
