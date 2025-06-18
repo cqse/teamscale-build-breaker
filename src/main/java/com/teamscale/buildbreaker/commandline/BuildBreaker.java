@@ -1,6 +1,5 @@
 package com.teamscale.buildbreaker.commandline;
 
-import com.teamscale.buildbreaker.OkHttpClientUtils;
 import com.teamscale.buildbreaker.autodetect_revision.EnvironmentVariableChecker;
 import com.teamscale.buildbreaker.autodetect_revision.GitChecker;
 import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
