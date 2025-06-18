@@ -1,8 +1,8 @@
 package com.teamscale.buildbreaker.commandline;
 
-import com.teamscale.buildbreaker.autodetect_revision.EnvironmentVariableChecker;
-import com.teamscale.buildbreaker.autodetect_revision.GitChecker;
-import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
+import com.teamscale.buildbreaker.commandline.autodetect_revision.EnvironmentVariableChecker;
+import com.teamscale.buildbreaker.commandline.autodetect_revision.GitChecker;
+import com.teamscale.buildbreaker.commandline.autodetect_revision.SvnChecker;
 import com.teamscale.buildbreaker.commandline.exceptions.AnalysisNotFinishedException;
 import com.teamscale.buildbreaker.commandline.exceptions.ExceptionToExitCodeMapper;
 import com.teamscale.buildbreaker.commandline.exceptions.InvalidParametersException;
