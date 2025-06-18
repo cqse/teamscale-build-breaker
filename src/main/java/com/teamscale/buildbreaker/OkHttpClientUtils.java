@@ -1,7 +1,7 @@
 package com.teamscale.buildbreaker;
 
-import com.teamscale.buildbreaker.exceptions.BuildBreakerInternalException;
-import com.teamscale.buildbreaker.exceptions.KeystoreException;
+import com.teamscale.buildbreaker.commandline.exceptions.BuildBreakerInternalException;
+import com.teamscale.buildbreaker.commandline.exceptions.KeystoreException;
 import okhttp3.OkHttpClient;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
