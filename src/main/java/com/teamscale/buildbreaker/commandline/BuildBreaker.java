@@ -129,7 +129,7 @@ public class BuildBreaker implements Callable<Integer> {
     @Override
     public Integer call() throws Exception {
         initDefaultOptions();
-        if (!findingEvalOptions.evaluateFindings && !thresholdEvalOptions.failOnYellowMetrics) {
+        if (!findingEvalOptions.evaluateFindings && !thresholdEvalOptions.evaluateThresholds) {
             throw new InvalidParametersException(
                     "Please specify at least one of --evaluate-findings or --evaluate-thresholds, otherwise no evaluation will take place.");
         }
