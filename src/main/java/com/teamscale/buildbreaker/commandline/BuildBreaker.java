@@ -23,7 +23,6 @@ import com.teamscale.buildbreaker.teamscale.client.exceptions.RepositoryNotFound
 import com.teamscale.buildbreaker.teamscale.client.exceptions.TooManyCommitsException;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
-import okhttp3.Response;
 import org.conqat.lib.commons.collections.Pair;
 import org.conqat.lib.commons.string.StringUtils;
 import picocli.CommandLine;
@@ -423,9 +422,8 @@ public class BuildBreaker implements Callable<Integer> {
         throw new ParameterException(spec.commandLine(), message);
     }
 
-    private void failWithHttpResponse(String message, Response response) {
-        String message1 = "Program execution failed:\n\n" + message + "\n\nTeamscale's response:\n" + response.toString() + "\n" +
-                OkHttpClientUtils.readBodySafe(response);
+    private void failWithHttpResponse(String message, String response) {
+        String message1 = "Program execution failed:\n\n" + message + "\n\nTeamscale's response:\n" + response;
         fail(message1);
     }
 }

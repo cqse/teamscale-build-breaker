@@ -3,8 +3,6 @@ package com.teamscale.buildbreaker;
 import com.teamscale.buildbreaker.commandline.exceptions.BuildBreakerInternalException;
 import com.teamscale.buildbreaker.commandline.exceptions.KeystoreException;
 import okhttp3.OkHttpClient;
-import okhttp3.Response;
-import okhttp3.ResponseBody;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
@@ -143,18 +141,6 @@ public class OkHttpClientUtils {
         builder.connectTimeout(60L, TimeUnit.SECONDS);
         builder.readTimeout(60L, TimeUnit.SECONDS);
         builder.writeTimeout(60L, TimeUnit.SECONDS);
-    }
-
-    public static String readBodySafe(Response response) {
-        try {
-            ResponseBody body = response.body();
-            if (body == null) {
-                return "<no response body>";
-            }
-            return body.string();
-        } catch (IOException e) {
-            return "Failed to read response body: " + e.getMessage();
-        }
     }
 
     private static class TrustAllCertificatesManager implements X509TrustManager {

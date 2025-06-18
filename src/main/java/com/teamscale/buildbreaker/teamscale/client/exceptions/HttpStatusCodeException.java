@@ -1,12 +1,10 @@
 package com.teamscale.buildbreaker.teamscale.client.exceptions;
 
-import okhttp3.Response;
-
 public class HttpStatusCodeException extends Exception {
     private final int statusCode;
-    private final Response response;
+    private final String response;
 
-    public HttpStatusCodeException(int statusCode, Response response) {
+    public HttpStatusCodeException(int statusCode, String response) {
         super("Encountered HTTP status code " + statusCode);
         this.statusCode = statusCode;
         this.response = response;
@@ -16,7 +14,7 @@ public class HttpStatusCodeException extends Exception {
         return statusCode;
     }
 
-    public Response getResponse() {
+    public String getResponse() {
         return response;
     }
 }

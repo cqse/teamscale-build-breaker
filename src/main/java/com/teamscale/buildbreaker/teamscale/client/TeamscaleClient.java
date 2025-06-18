@@ -3,7 +3,6 @@ package com.teamscale.buildbreaker.teamscale.client;
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.PathNotFoundException;
-import com.teamscale.buildbreaker.OkHttpClientUtils;
 import com.teamscale.buildbreaker.autodetect_revision.GitChecker;
 import com.teamscale.buildbreaker.autodetect_revision.SvnChecker;
 import com.teamscale.buildbreaker.evaluation.Finding;
@@ -21,6 +20,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
 import org.conqat.lib.commons.collections.Pair;
 import org.conqat.lib.commons.string.StringUtils;
 
@@ -302,7 +302,7 @@ public class TeamscaleClient implements AutoCloseable {
     private String sendRequest(Request request) throws IOException, HttpRedirectException, HttpStatusCodeException {
         try (Response response = client.newCall(request).execute()) {
             handleErrors(response);
-            return OkHttpClientUtils.readBodySafe(response);
+            return readBodySafe(response);
         }
     }
 
@@ -314,6 +314,18 @@ public class TeamscaleClient implements AutoCloseable {
                 .build();
     }
 
+    public static String readBodySafe(Response response) {
+        try {
+            ResponseBody body = response.body();
+            if (body == null) {
+                return "<no response body>";
+            }
+            return body.string();
+        } catch (IOException e) {
+            return "Failed to read response body: " + e.getMessage();
+        }
+    }
+
     private void handleErrors(Response response) throws HttpRedirectException, HttpStatusCodeException {
         if (response.isRedirect()) {
             String location = response.header("Location");
@@ -323,7 +335,7 @@ public class TeamscaleClient implements AutoCloseable {
             throw new HttpRedirectException(location);
         }
         if (!response.isSuccessful()) {
-            throw new HttpStatusCodeException(response.code(), response);
+            throw new HttpStatusCodeException(response.code(), response.toString());
         }
     }
 
