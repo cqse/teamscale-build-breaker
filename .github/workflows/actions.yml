@@ -20,7 +20,7 @@ jobs:
         run: mvn clean verify -Pfailsafe -Pshaded
       - name: 'Upload Artifact'
         if: ${{ always() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: target-jar
           path: ./target
@@ -50,7 +50,7 @@ jobs:
             ./target/teamscale-buildbreaker
       - name: 'Upload Artifact'
         if: ${{ always() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: target-linux
           path: ./target
@@ -80,7 +80,7 @@ jobs:
             ./target/teamscale-buildbreaker.exe
       - name: 'Upload Artifact'
         if: ${{ always() }}
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: target-windows
           path: ./target
