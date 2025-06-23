@@ -56,22 +56,26 @@ Whether to fail on yellow findings (with exit code 2).
 
 **--target-revision**=*&lt;revision-hash&gt;*  
 The revision (hash) to compare with using Teamscale's branch merge delta service. If specified, findings will be
-evaluated based on what would happen if the commit specified via --commit would be merged into this commit. This will
+evaluated based on what would happen if the current commit (or the one specified via --commit) would be merged into this
+commit. This will
 take precedence over --target-branch-and-timestamp.
 
 **--target-branch-and-timestamp**=*&lt;branch:timestamp&gt;*  
 The branch and timestamp to compare with using Teamscale's branch merge delta service. If specified, findings will be
-evaluated based on what would happen if the commit specified via --commit would be merged into this commit.
+evaluated based on what would happen if the current commit (or the one specified via --commit) would be merged into this
+commit.
 --target-revision will take precedence over this option if provided.
 
 **--base-revision**=*&lt;revision-hash&gt;*  
 The base revision (hash) to compare with using Teamscale's linear delta service. The commit needs to be a parent of the
-one specified via --commit. If specified, findings of all commits in between the two will be evaluated. This will take
+current commit (or the one specified via --commit). If specified, findings of all commits in between the two will be
+evaluated. This will take
 precedence over --base-branch-and-timestamp.
 
 **--base-branch-and-timestamp**=*&lt;branch:timestamp&gt;*  
 The base branch and timestamp to compare with using Teamscale's linear delta service. The commit needs to be a parent of
-the one specified via --commit. If specified, findings of all commits in between the two will be evaluated.
+the current commit (or the one specified via --commit). If specified, findings of all commits in between the two will be
+evaluated.
 --base-revision will take precedence over this option if provided.
 
 **--fail-on-yellow-metrics**  
