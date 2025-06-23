@@ -335,7 +335,7 @@ public class TeamscaleClient implements AutoCloseable {
             throw new HttpRedirectException(location);
         }
         if (!response.isSuccessful()) {
-            throw new HttpStatusCodeException(response.code(), response.toString());
+            throw new HttpStatusCodeException(response.code(), readBodySafe(response));
         }
     }
 
