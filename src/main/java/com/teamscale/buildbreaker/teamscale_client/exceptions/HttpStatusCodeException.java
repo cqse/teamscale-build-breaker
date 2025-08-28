@@ -1,4 +1,4 @@
-package com.teamscale.buildbreaker.teamscale.client.exceptions;
+package com.teamscale.buildbreaker.teamscale_client.exceptions;
 
 public class HttpStatusCodeException extends Exception {
     private final int statusCode;

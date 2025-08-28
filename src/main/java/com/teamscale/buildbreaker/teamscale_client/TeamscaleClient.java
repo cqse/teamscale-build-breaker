@@ -1,4 +1,4 @@
-package com.teamscale.buildbreaker.teamscale.client;
+package com.teamscale.buildbreaker.teamscale_client;
 
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
@@ -8,12 +8,12 @@ import com.teamscale.buildbreaker.commandline.autodetect_revision.SvnChecker;
 import com.teamscale.buildbreaker.evaluation.Finding;
 import com.teamscale.buildbreaker.evaluation.MetricViolation;
 import com.teamscale.buildbreaker.evaluation.ProblemCategory;
-import com.teamscale.buildbreaker.teamscale.client.exceptions.CommitCouldNotBeResolvedException;
-import com.teamscale.buildbreaker.teamscale.client.exceptions.HttpRedirectException;
-import com.teamscale.buildbreaker.teamscale.client.exceptions.HttpStatusCodeException;
-import com.teamscale.buildbreaker.teamscale.client.exceptions.ParserException;
-import com.teamscale.buildbreaker.teamscale.client.exceptions.RepositoryNotFoundException;
-import com.teamscale.buildbreaker.teamscale.client.exceptions.TooManyCommitsException;
+import com.teamscale.buildbreaker.teamscale_client.exceptions.CommitCouldNotBeResolvedException;
+import com.teamscale.buildbreaker.teamscale_client.exceptions.HttpRedirectException;
+import com.teamscale.buildbreaker.teamscale_client.exceptions.HttpStatusCodeException;
+import com.teamscale.buildbreaker.teamscale_client.exceptions.ParserException;
+import com.teamscale.buildbreaker.teamscale_client.exceptions.RepositoryNotFoundException;
+import com.teamscale.buildbreaker.teamscale_client.exceptions.TooManyCommitsException;
 import okhttp3.Credentials;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;

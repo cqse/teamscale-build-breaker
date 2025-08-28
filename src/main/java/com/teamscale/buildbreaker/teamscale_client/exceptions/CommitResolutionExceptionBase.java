@@ -1,4 +1,4 @@
-package com.teamscale.buildbreaker.teamscale.client.exceptions;
+package com.teamscale.buildbreaker.teamscale_client.exceptions;
 
 public abstract class CommitResolutionExceptionBase extends Exception {
     private final String revision;
