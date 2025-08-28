@@ -209,6 +209,7 @@ public class TeamscaleClient implements AutoCloseable {
     public boolean isTeamscaleAnalysisFinished(String branchAndTimestampToWaitFor) throws IOException, HttpRedirectException, HttpStatusCodeException {
         String[] branchAndTimestamp = branchAndTimestampToWaitFor.split(":", 2);
         String branch = branchAndTimestamp[0];
+        // TODO Throws a NumberFormatException if HEAD is passed as timestamp. Fix!
         long timestamp = Long.parseLong(branchAndTimestamp[1]);
         return isAnalysisFinished(branch, timestamp);
     }
@@ -266,6 +267,7 @@ public class TeamscaleClient implements AutoCloseable {
     }
 
     private static List<Finding> parseFindings(List<Map<String, Object>> addedFindings) throws ParserException {
+        // TODO throws a class cast exception when called since 2025.7 (for the merge request delta). We should probably make the API public API but also fix the parsing here
         try {
             return addedFindings.stream().map(findingMap -> {
                 String id = findingMap.get("id").toString();
