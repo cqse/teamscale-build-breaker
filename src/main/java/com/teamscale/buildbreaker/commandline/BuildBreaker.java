@@ -208,36 +208,39 @@ public class BuildBreaker implements Callable<Integer> {
         System.out.println(findingsResult);
 
         if (findingsResult.toStatusCode() > 0) {
-            HttpUrl.Builder urlBuilder;
-            if (StringUtils.isEmpty(targetBranchAndTimestamp) && StringUtils.isEmpty(baseBranchAndTimestamp)) {
-                urlBuilder = teamscaleServerUrl.newBuilder()
-                        .addPathSegment("activity.html")
-                        .fragment("details/" + project + "?t=" + currentBranchAndTimestamp);
-            } else if (!StringUtils.isEmpty(targetBranchAndTimestamp)) {
-                urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta")
-                        .addPathSegment("findings")
-                        .addPathSegment(project)
-                        .addQueryParameter("from", currentBranchAndTimestamp)
-                        .addQueryParameter("to", targetBranchAndTimestamp)
-                        .addQueryParameter("showMergeFindings", "true")
-                        .addQueryParameter("finding-section", "1") // Show red findings section
-                        .addQueryParameter("filter-option", "EXCLUDED"); // Hide flagged findings
-            } else {
-                urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta")
-                        .addPathSegment("findings")
-                        .addPathSegment(project)
-                        .addQueryParameter("from", baseBranchAndTimestamp)
-                        .addQueryParameter("to", currentBranchAndTimestamp)
-                        .addQueryParameter("finding-section", "1") // Show red findings section
-                        .addQueryParameter("filter-option", "EXCLUDED"); // Hide flagged findings
-            }
-
             System.out.println(
                     "More detailed information about these findings is available in Teamscale's web interface at " +
-                            urlBuilder.build());
+                            buildFindingsUiUrl(targetBranchAndTimestamp, baseBranchAndTimestamp, currentBranchAndTimestamp));
         }
 
         return findingsResult;
+    }
+
+    private HttpUrl buildFindingsUiUrl(String targetBranchAndTimestamp, String baseBranchAndTimestamp, String currentBranchAndTimestamp) {
+        HttpUrl.Builder urlBuilder;
+        if (StringUtils.isEmpty(targetBranchAndTimestamp) && StringUtils.isEmpty(baseBranchAndTimestamp)) {
+            urlBuilder = teamscaleServerUrl.newBuilder()
+                    .addPathSegment("activity.html")
+                    .fragment("details/" + project + "?t=" + currentBranchAndTimestamp);
+        } else if (!StringUtils.isEmpty(targetBranchAndTimestamp)) {
+            urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta")
+                    .addPathSegment("findings")
+                    .addPathSegment(project)
+                    .addQueryParameter("from", currentBranchAndTimestamp)
+                    .addQueryParameter("to", targetBranchAndTimestamp)
+                    .addQueryParameter("showMergeFindings", "true")
+                    .addQueryParameter("finding-section", "1") // Show red findings section
+                    .addQueryParameter("filter-option", "EXCLUDED"); // Hide flagged findings
+        } else {
+            urlBuilder = teamscaleServerUrl.newBuilder().addPathSegment("delta")
+                    .addPathSegment("findings")
+                    .addPathSegment(project)
+                    .addQueryParameter("from", baseBranchAndTimestamp)
+                    .addQueryParameter("to", currentBranchAndTimestamp)
+                    .addQueryParameter("finding-section", "1") // Show red findings section
+                    .addQueryParameter("filter-option", "EXCLUDED"); // Hide flagged findings
+        }
+        return urlBuilder.build();
     }
 
     private EvaluationResult evaluateMetrics() throws IOException, HttpRedirectException, HttpStatusCodeException, TooManyCommitsException, CommitCouldNotBeResolvedException, ParserException {
