@@ -42,6 +42,11 @@ import java.util.stream.Collectors;
  * about repository changes with the Teamscale server.
  */
 public class TeamscaleClient implements AutoCloseable {
+    /**
+     * We use the <a href="https://cqse.atlassian.net/wiki/spaces/TS/pages/2405269654/Oldest+Internally+Supported+Release+Branch">oldest internally supported version</a>
+     */
+    private static final String API_VERSION = "v9.2";
+
     private final OkHttpClient client;
     private final HttpUrl teamscaleServerUrl;
     private final String user;
@@ -66,14 +71,16 @@ public class TeamscaleClient implements AutoCloseable {
     public Pair<List<Finding>, List<Finding>> fetchFindingsUsingCommitDetails(String branchAndTimestamp) throws IOException, HttpRedirectException, HttpStatusCodeException, ParserException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder()
-                        .addPathSegments("api/projects")
+                        .addPathSegments("api")
+                        .addPathSegment(API_VERSION)
+                        .addPathSegments("projects")
                         .addPathSegment(project)
                         .addPathSegments("finding-churn/list")
                         .addQueryParameter("t", branchAndTimestamp);
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String response = sendRequest(request);
-        return parseFindingResponse(response);
+        return parseCommitFindingResponse(response);
     }
 
     /**
@@ -81,6 +88,7 @@ public class TeamscaleClient implements AutoCloseable {
      * @throws HttpRedirectException   if a redirect is encountered
      * @throws HttpStatusCodeException if an HTTP error code was returned by Teamscale
      * @throws ParserException         if there was an error parsing Teamscale's response
+     * @implNote The API we use here is not yet a public API (<a href="https://cqse.atlassian.net/browse/TS-44014">TS-44014</a>), so we don't use a versioned endpoint.
      */
     public Pair<List<Finding>, List<Finding>> fetchFindingsUsingLinearDelta(String startBranchAndTimestamp, String endBranchAndTimestamp) throws IOException, HttpRedirectException, HttpStatusCodeException, ParserException {
         HttpUrl.Builder builder =
@@ -93,7 +101,7 @@ public class TeamscaleClient implements AutoCloseable {
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String response = sendRequest(request);
-        return parseFindingResponse(response);
+        return parseDeltaFindingsResponse(response);
     }
 
     /**
@@ -101,6 +109,7 @@ public class TeamscaleClient implements AutoCloseable {
      * @throws HttpRedirectException   if a redirect is encountered
      * @throws HttpStatusCodeException if an HTTP error code was returned by Teamscale
      * @throws ParserException         if there was an error parsing Teamscale's response
+     * @implNote The API we use here is not yet a public API (<a href="https://cqse.atlassian.net/browse/TS-44014">TS-44014</a>), so we don't use a versioned endpoint.
      */
     public Pair<List<Finding>, List<Finding>> fetchFindingsUsingBranchMergeDelta(String sourceBranchAndTimestamp, String targetBranchAndTimestamp) throws IOException, HttpRedirectException, HttpStatusCodeException, ParserException {
 
@@ -115,7 +124,7 @@ public class TeamscaleClient implements AutoCloseable {
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String response = sendRequest(request);
-        return parseFindingResponse(response);
+        return parseDeltaFindingsResponse(response);
     }
 
     /**
@@ -234,16 +243,58 @@ public class TeamscaleClient implements AutoCloseable {
         }
     }
 
-    private Pair<List<Finding>, List<Finding>> parseFindingResponse(String response) throws ParserException {
-        DocumentContext findingsJson = JsonPath.parse(response);
-        Pair<List<Finding>, List<Finding>> result = Pair.createPair(new ArrayList<>(), new ArrayList<>());
+    private Pair<List<Finding>, List<Finding>> parseCommitFindingResponse(String response) throws ParserException {
         try {
-            result.getFirst().addAll(parseFindings(findingsJson.read("$.addedFindings.*")));
-            result.getSecond().addAll(parseFindings(findingsJson.read("$.findingsInChangedCode.*")));
+            return tryParseFindingsResponse(response, "$.addedFindings.*", "$.findingsInChangedCode.*");
         } catch (ParserException | PathNotFoundException e) {
             throw new ParserException("Could not parse findings JSON response:\n" + response + "\n\nPlease contact CQSE with an error report.", e);
         }
+    }
+
+    /**
+     * @implNote The APIs we use in {@link #fetchFindingsUsingBranchMergeDelta} and {@link #fetchFindingsUsingLinearDelta}
+     * are not yet public APIs (<a href="https://cqse.atlassian.net/browse/TS-44014">TS-44014</a>).
+     * In 2025.6, the returned JSON format actually changed, and thus we need to support both the old and new version.
+     * We first try with JSON format from 2025.6 and up, and if it fails, we try with the legacy JSON format from 2025.5 and below.
+     */
+    private Pair<List<Finding>, List<Finding>> parseDeltaFindingsResponse(String response) throws ParserException {
+        // 2025.6 and up
+        try {
+            return tryParseFindingsResponse(response, "$.addedFindings.findings", "$.findingsInChangedCode.findings");
+        } catch (PathNotFoundException e) {
+            // We continue below to reduce nesting
+        }
+
+        // 2025.5 and below
+        try {
+            return tryParseFindingsResponse(response, "$.addedFindings.*", "$.findingsInChangedCode.*");
+        } catch (ParserException | PathNotFoundException e) {
+            throw new ParserException("Could not parse findings JSON response:\n" + response + "\n\nPlease contact CQSE with an error report.", e);
+        }
+    }
+
+    private static Pair<List<Finding>, List<Finding>> tryParseFindingsResponse(String response, String addedFindingsJsonPath, String findingsInChangedCodeJsonPath) throws ParserException {
+        DocumentContext findingsJson = JsonPath.parse(response);
+        Pair<List<Finding>, List<Finding>> result = Pair.createPair(new ArrayList<>(), new ArrayList<>());
+        result.getFirst().addAll(parseFindings(findingsJson.read(addedFindingsJsonPath)));
+        result.getSecond().addAll(parseFindings(findingsJson.read(findingsInChangedCodeJsonPath)));
         return result;
+    }
+
+    private static List<Finding> parseFindings(List<Map<String, Object>> addedFindings) throws ParserException {
+        try {
+            return addedFindings.stream().map(findingMap -> {
+                String id = findingMap.get("id").toString();
+                String group = findingMap.get("groupName").toString();
+                String category = findingMap.get("categoryName").toString();
+                String message = findingMap.get("message").toString();
+                String uniformPath = ((Map<String, String>) findingMap.getOrDefault("location", new HashMap<>())).getOrDefault("uniformPath", "<undefined>");
+                ProblemCategory assessment = ProblemCategory.fromRatingString((String) findingMap.get("assessment"));
+                return new Finding(id, group, category, message, uniformPath, assessment);
+            }).collect(Collectors.toList());
+        } catch (ClassCastException e) {
+            throw new ParserException(e);
+        }
     }
 
     private List<MetricViolation> parseMetricResponse(String response) throws ParserException {
@@ -263,23 +314,6 @@ public class TeamscaleClient implements AutoCloseable {
             return result;
         } catch (ClassCastException | PathNotFoundException e) {
             throw new ParserException("Could not parse metrics JSON response:\n" + response + "\n\nPlease contact CQSE with an error report.", e);
-        }
-    }
-
-    private static List<Finding> parseFindings(List<Map<String, Object>> addedFindings) throws ParserException {
-        // TODO throws a class cast exception when called since 2025.7 (for the merge request delta). We should probably make the API public API but also fix the parsing here
-        try {
-            return addedFindings.stream().map(findingMap -> {
-                String id = findingMap.get("id").toString();
-                String group = findingMap.get("groupName").toString();
-                String category = findingMap.get("categoryName").toString();
-                String message = findingMap.get("message").toString();
-                String uniformPath = ((Map<String, String>) findingMap.getOrDefault("location", new HashMap<>())).getOrDefault("uniformPath", "<undefined>");
-                ProblemCategory assessment = ProblemCategory.fromRatingString((String) findingMap.get("assessment"));
-                return new Finding(id, group, category, message, uniformPath, assessment);
-            }).collect(Collectors.toList());
-        } catch (ClassCastException e) {
-            throw new ParserException(e);
         }
     }
 
