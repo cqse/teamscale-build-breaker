@@ -15,9 +15,8 @@ class CommitOptions {
             description = "The branch and Unix Epoch timestamp for which analysis results should be evaluated." +
                     " This is typically the branch and commit timestamp of the commit that the current CI pipeline" +
                     " is building. The timestamp must be milliseconds since" +
-                    " 00:00:00 UTC Thursday, 1 January 1970 or the string 'HEAD' to evaluate thresholds on" +
-                    " the latest revision on that branch." + "\nFormat: BRANCH:TIMESTAMP" +
-                    "\nExample: master:1597845930000" + "\nExample: develop:HEAD")
+                    " 00:00:00 UTC Thursday, 1 January 1970." + "\nFormat: BRANCH:TIMESTAMP" +
+                    "\nExample: master:1597845930000" + "\nExample: master:1597845930000")
     public void setBranchAndTimestamp(String branchAndTimestamp) {
         validateBranchAndTimestamp(branchAndTimestamp, "-b, --branch-and-timestamp");
         this.branchAndTimestamp = branchAndTimestamp;

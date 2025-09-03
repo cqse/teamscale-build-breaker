@@ -218,7 +218,6 @@ public class TeamscaleClient implements AutoCloseable {
     public boolean isTeamscaleAnalysisFinished(String branchAndTimestampToWaitFor) throws IOException, HttpRedirectException, HttpStatusCodeException {
         String[] branchAndTimestamp = branchAndTimestampToWaitFor.split(":", 2);
         String branch = branchAndTimestamp[0];
-        // TODO Throws a NumberFormatException if HEAD is passed as timestamp. Fix!
         long timestamp = Long.parseLong(branchAndTimestamp[1]);
         return isAnalysisFinished(branch, timestamp);
     }

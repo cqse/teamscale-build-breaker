@@ -55,8 +55,9 @@ import java.util.function.Supplier;
                 " If automatic detection fails, you can manually specify either a commit via --commit, or" +
                 " a branch and timestamp via --branch-and-timestamp.\nIntroduction of new findings can only be evaluated when" +
                 " a specific commit is given, but threshold evaluation can also be performed on the current version of a branch by using" +
-                " --branch-and-timestamp my-branch:HEAD.\nYou can also compare the current branch with a target branch using" +
-                " --target-branch to evaluate findings between branches instead of just for a single commit.")
+                " --branch-and-timestamp master:1597845930000.\nYou can also compare the current branch with a target branch using" +
+                " --target-branch-and-timestamp to evaluate findings between branches or --base-branch-and-timestamp for a commit range" +
+                " instead of just for a single commit.")
 public class BuildBreaker implements Callable<Integer> {
 
     /**

@@ -23,15 +23,10 @@ class BranchAndTimestampUtils {
             throw new CommandLine.ParameterException(BuildBreaker.spec.commandLine(),
                     "You specified an invalid branch and timestamp" + " with " + parameterName + ": " +
                             branchAndTimestamp + "\nYou must  use the" +
-                            " format BRANCH:TIMESTAMP, where TIMESTAMP is a Unix timestamp in milliseconds" +
-                            " or the string 'HEAD' (to upload to the latest commit on that branch).");
+                            " format BRANCH:TIMESTAMP, where TIMESTAMP is a Unix timestamp in milliseconds.");
         }
 
         String timestampPart = parts[1];
-        if (timestampPart.equalsIgnoreCase("HEAD")) {
-            return;
-        }
-
         validateTimestamp(timestampPart, parameterName);
     }
 
@@ -53,8 +48,7 @@ class BranchAndTimestampUtils {
             }
         } catch (NumberFormatException e) {
             throw new CommandLine.ParameterException(BuildBreaker.spec.commandLine(), "You specified an invalid timestamp with " + parameterName +
-                    ". Expected either 'HEAD' or a unix timestamp" +
-                    " in milliseconds since 00:00:00 UTC Thursday, 1 January 1970, e.g." +
+                    ". Expected a unix timestamp in milliseconds since 00:00:00 UTC Thursday, 1 January 1970, e.g." +
                     " master:1606743774000\nInstead you used: " + timestampPart);
         }
     }

@@ -35,11 +35,10 @@ The IDE access key of the given user. Can be retrieved in Teamscale under Admin 
 The branch and Unix Epoch timestamp for which analysis results should be evaluated. This is typically the branch and
 commit timestamp of the commit that the current CI pipeline is building. The timestamp must be milliseconds since 00:00:
 00 UTC Thursday, 1 January 1970 or the string
-*HEAD* to evaluate thresholds on the latest revision on that branch.
 
 Format: BRANCH:TIMESTAMP
 
-Examples: master:1597845930000 or develop:HEAD
+Example: master:1597845930000
 
 **-c**, **--commit**=*&lt;commit-revision&gt;*  
 The version control commit revision for which analysis results should be obtained. This is typically the commit that the
