@@ -179,7 +179,7 @@ public class BuildBreaker implements Callable<Integer> {
         return -9000; // Should never be reached
     }
 
-    private EvaluationResult evaluateFindings() throws IOException, TooManyCommitsException, HttpRedirectException, HttpStatusCodeException, CommitCouldNotBeResolvedException, ParserException {
+    private EvaluationResult evaluateFindings() throws IOException, TooManyCommitsException, HttpRedirectException, HttpStatusCodeException, CommitCouldNotBeResolvedException, ParserException, InterruptedException {
         String currentBranchAndTimestamp = determineBranchAndTimestamp();
         String targetBranchAndTimestamp = determineTargetBranchAndTimestamp();
         String baseBranchAndTimestamp = determineBaseBranchAndTimestamp();
@@ -193,10 +193,12 @@ public class BuildBreaker implements Callable<Integer> {
             System.out.println("Evaluating findings for the current commit...");
             findingAssessments = teamscaleClient.fetchFindingsUsingCommitDetails(currentBranchAndTimestamp);
         } else if (!StringUtils.isEmpty(targetBranchAndTimestamp)) {
+            waitForAnalysisToFinish(targetBranchAndTimestamp);
             System.out.println("Evaluating findings by comparing the current commit with target commit '" +
                     targetBranchAndTimestamp + "'...");
             findingAssessments = teamscaleClient.fetchFindingsUsingBranchMergeDelta(currentBranchAndTimestamp, targetBranchAndTimestamp);
         } else {
+            waitForAnalysisToFinish(baseBranchAndTimestamp);
             System.out.println("Evaluating findings by aggregating the findings from the base commit '" +
                     baseBranchAndTimestamp + "'...");
             findingAssessments = teamscaleClient.fetchFindingsUsingLinearDelta(baseBranchAndTimestamp, currentBranchAndTimestamp);
