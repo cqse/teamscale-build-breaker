@@ -71,9 +71,9 @@ public class TeamscaleClient implements AutoCloseable {
     public Pair<List<Finding>, List<Finding>> fetchFindingsUsingCommitDetails(String branchAndTimestamp) throws IOException, HttpRedirectException, HttpStatusCodeException, ParserException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder()
-                        .addPathSegments("api")
+                        .addPathSegment("api")
                         .addPathSegment(API_VERSION)
-                        .addPathSegments("projects")
+                        .addPathSegment("projects")
                         .addPathSegment(project)
                         .addPathSegments("finding-churn/list")
                         .addQueryParameter("t", branchAndTimestamp);
@@ -161,7 +161,9 @@ public class TeamscaleClient implements AutoCloseable {
         }
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder()
-                        .addPathSegments("api/projects")
+                        .addPathSegment("api")
+                        .addPathSegment(API_VERSION)
+                        .addPathSegment("projects")
                         .addPathSegment(project)
                         .addPathSegment("revision")
                         .addPathSegment(revision)
