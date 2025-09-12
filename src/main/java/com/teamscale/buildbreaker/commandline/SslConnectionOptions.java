@@ -1,10 +1,11 @@
 package com.teamscale.buildbreaker.commandline;
 
 import org.conqat.lib.commons.string.StringUtils;
-import picocli.CommandLine;
+import static picocli.CommandLine.Option;
+import static picocli.CommandLine.ParameterException;
 
 class SslConnectionOptions {
-    @CommandLine.Option(names = "--insecure",
+    @Option(names = "--insecure",
             description = "By default, SSL certificates are validated against the configured KeyStore." +
                     " This flag disables validation which makes using this tool with self-signed certificates easier.")
     public boolean disableSslValidation;
@@ -13,7 +14,7 @@ class SslConnectionOptions {
 
     public String keyStorePassword;
 
-    @CommandLine.Option(names = "--trusted-keystore", paramLabel = "<keystore-path;password>",
+    @Option(names = "--trusted-keystore", paramLabel = "<keystore-path;password>",
             description = "A Java KeyStore file and its corresponding password. The KeyStore contains" +
                     " additional certificates that should be trusted when performing SSL requests." +
                     " Separate the path from the password with a semicolon, e.g:" +
@@ -23,7 +24,7 @@ class SslConnectionOptions {
         String[] keystoreAndPasswordSplit = keystoreAndPassword.split(";", 2);
         this.keyStorePath = keystoreAndPasswordSplit[0];
         if (StringUtils.isEmpty(this.keyStorePath)) {
-            throw new CommandLine.ParameterException(BuildBreaker.spec.commandLine(), "You must supply a valid KeyStore path.");
+            throw new ParameterException(BuildBreaker.spec.commandLine(), "You must supply a valid KeyStore path.");
         }
         this.keyStorePassword = keystoreAndPasswordSplit[1];
     }

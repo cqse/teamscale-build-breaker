@@ -34,7 +34,7 @@ The IDE access key of the given user. Can be retrieved in Teamscale under Admin 
 **-b**, **--branch-and-timestamp**=*&lt;branch:timestamp&gt;*  
 The branch and Unix Epoch timestamp for which analysis results should be evaluated. This is typically the branch and
 commit timestamp of the commit that the current CI pipeline is building. The timestamp must be milliseconds since 00:00:
-00 UTC Thursday, 1 January 1970 or the string
+00 UTC Thursday, 1 January 1970.
 
 Format: BRANCH:TIMESTAMP
 

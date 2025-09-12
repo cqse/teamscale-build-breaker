@@ -179,7 +179,7 @@ public class TeamscaleClient implements AutoCloseable {
             throw new TooManyCommitsException(revision, commitDescriptorsJson);
         }
         String timestamp = extractTimestamp(commitDescriptorsJson);
-        String branchName = extractBranchname(commitDescriptorsJson);
+        String branchName = extractBranchName(commitDescriptorsJson);
 
         if (timestamp == null || branchName == null) {
             throw new CommitCouldNotBeResolvedException(revision);
@@ -274,7 +274,7 @@ public class TeamscaleClient implements AutoCloseable {
         }
     }
 
-    private static Pair<List<Finding>, List<Finding>> tryParseFindingsResponse(String response, String addedFindingsJsonPath, String findingsInChangedCodeJsonPath) throws ParserException {
+    private static Pair<List<Finding>, List<Finding>> tryParseFindingsResponse(String response, String addedFindingsJsonPath, String findingsInChangedCodeJsonPath) throws ParserException, PathNotFoundException {
         DocumentContext findingsJson = JsonPath.parse(response);
         Pair<List<Finding>, List<Finding>> result = Pair.createPair(new ArrayList<>(), new ArrayList<>());
         result.getFirst().addAll(parseFindings(findingsJson.read(addedFindingsJsonPath)));
@@ -282,9 +282,9 @@ public class TeamscaleClient implements AutoCloseable {
         return result;
     }
 
-    private static List<Finding> parseFindings(List<Map<String, Object>> addedFindings) throws ParserException {
+    private static List<Finding> parseFindings(List<Map<String, Object>> findingsRaw) throws ParserException {
         try {
-            return addedFindings.stream().map(findingMap -> {
+            return findingsRaw.stream().map(findingMap -> {
                 String id = findingMap.get("id").toString();
                 String group = findingMap.get("groupName").toString();
                 String category = findingMap.get("categoryName").toString();
@@ -327,7 +327,7 @@ public class TeamscaleClient implements AutoCloseable {
         return null;
     }
 
-    private String extractBranchname(String commitDescriptorsJson) {
+    private String extractBranchName(String commitDescriptorsJson) {
         Pattern pattern = Pattern.compile("\"branchName\"\\s*:\\s*\"([^\"]+)\"");
         Matcher matcher = pattern.matcher(commitDescriptorsJson);
         if (matcher.find()) {

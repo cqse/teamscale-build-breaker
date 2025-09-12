@@ -114,8 +114,8 @@ public class BuildBreaker implements Callable<Integer> {
      * Caches the commit which should be analyzed.
      */
     String detectedCommit = null;
-    private TeamscaleClient teamscaleClient;
 
+    private TeamscaleClient teamscaleClient;
 
     public static void main(String... args) {
         // Just let PicoCLI handle everything. Main entry point for PicoCLI is the "call()" method.
@@ -165,7 +165,7 @@ public class BuildBreaker implements Callable<Integer> {
         } catch (CommitCouldNotBeResolvedException e) {
             // We do not call fail here because we want to keep the old api of returning code -5
             System.out.println("Could not resolve revision " + e.getRevision() +
-                    " to a valid commit known to Teamscale (no commits returned)");
+                    " to a valid commit known to Teamscale (no commits returned or timestamp/branch name could not be extracted.)");
             return -5;
         } catch (TooManyCommitsException e) {
             fail("Could not resolve revision " + e.getRevision() +
@@ -201,7 +201,7 @@ public class BuildBreaker implements Callable<Integer> {
         } else {
             waitForAnalysisToFinish(baseBranchAndTimestamp);
             System.out.println("Evaluating findings by aggregating the findings from the base commit '" +
-                    baseBranchAndTimestamp + "'...");
+                    baseBranchAndTimestamp + "' up to the current commit '" + currentBranchAndTimestamp + "' ...");
             findingAssessments = teamscaleClient.fetchFindingsUsingLinearDelta(baseBranchAndTimestamp, currentBranchAndTimestamp);
         }
 
@@ -398,13 +398,12 @@ public class BuildBreaker implements Callable<Integer> {
                         .addQueryParameter("username", user)
                         .build();
                 failWithHttpResponse("You provided incorrect credentials." + " Either the user '" + user + "' does not exist in Teamscale" +
-                        " or the access key you provided is incorrect." +
-                        " Please check both the username and access key in Teamscale under Admin > Users:" + " " +
+                        " or the access key you provided is incorrect. Please check both the username and access key in Teamscale under Admin > Users: " +
                         editUserUrl + "\nPlease use the user's access key, not their password.", e.getResponseBody());
 
             case 403:
-                failWithHttpResponse("The user user '" + user + "' is not allowed to upload data to the Teamscale project '" + project +
-                        "'." + " Please grant this user the 'Perform External Uploads' permission in Teamscale" +
+                failWithHttpResponse("The user '" + user + "' is not allowed to upload data to the Teamscale project '" +
+                        project + "'. Please grant this user the 'Perform External Uploads' permission in Teamscale" +
                         " under Project Configuration > Projects by clicking on the button showing three" +
                         " persons next to project '" + project + "'.", e.getResponseBody());
             case 404:
@@ -412,7 +411,7 @@ public class BuildBreaker implements Callable<Integer> {
                         .addPathSegment("project.html")
                         .build();
                 failWithHttpResponse("The project with ID or alias '" + project + "' does not seem to exist in Teamscale." +
-                                " Please ensure that you used the project ID or the project alias, NOT the project name." +
+                                " Please ensure that the user '" + user + "' is allowed to access the project and that you used the project ID or the project alias, NOT the project name." +
                                 " You can see the IDs of all projects at " + projectPerspectiveUrl +
                                 "\nPlease also ensure that the Teamscale URL is correct and no proxy is required to access it.",
                         e.getResponseBody());
@@ -428,7 +427,6 @@ public class BuildBreaker implements Callable<Integer> {
     }
 
     private void failWithHttpResponse(String message, String responseBody) {
-        String message1 = "Program execution failed:\n\n" + message + "\n\nTeamscale's response:\n" + responseBody;
-        fail(message1);
+        fail("Program execution failed:\n\n" + message + "\n\nTeamscale's response:\n" + responseBody);
     }
 }
