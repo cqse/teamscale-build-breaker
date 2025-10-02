@@ -16,7 +16,7 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <graalvm.version>20.3.0</graalvm.version>
-        <mainClass>com.teamscale.buildbreaker.BuildBreaker</mainClass>
+        <mainClass>com.teamscale.buildbreaker.commandline.BuildBreaker</mainClass>
     </properties>
 
     <dependencies>

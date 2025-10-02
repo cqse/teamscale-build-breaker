@@ -1,47 +1,26 @@
 package com.teamscale.buildbreaker.evaluation;
 
-import com.jayway.jsonpath.DocumentContext;
-import com.jayway.jsonpath.JsonPath;
-import com.teamscale.buildbreaker.exceptions.BuildBreakerInternalException;
-import org.conqat.lib.commons.string.StringUtils;
+import org.conqat.lib.commons.collections.Pair;
 
-import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
-/** Evaluates a finding JSON string (corresponds to Teamscale type FindingChurnList). */
 public class FindingsEvaluator {
 
-    public EvaluationResult evaluate(String findingsJson, boolean failOnYellowFindings, boolean includeChangedCode) {
+    public EvaluationResult evaluate(Pair<List<Finding>, List<Finding>> findings, boolean failOnYellowFindings, boolean includeChangedCode) {
         EvaluationResult evaluationResult = new EvaluationResult();
-        if (StringUtils.isEmpty(findingsJson)) {
-            return evaluationResult;
-        }
-        DocumentContext findings = JsonPath.parse(findingsJson);
-        List<Map<String, Object>> findingsToEvaluate = findings.read("$..addedFindings.*");
+
+        List<Finding> findingsToEvaluate = new ArrayList<>(findings.getFirst());
         if (includeChangedCode) {
-            List<Map<String, Object>> findingsInChangedCode = findings.read("$..findingsInChangedCode.*");
-            findingsToEvaluate.addAll(findingsInChangedCode);
+            findingsToEvaluate.addAll(findings.getSecond());
         }
-        try {
-            for (Map<String, Object> finding : findingsToEvaluate) {
-                Map<String, String> location = (Map<String, String>) finding.getOrDefault("location", new HashMap<>());
-                String message =
-                        String.format("Finding %s:\n\tGroup: %s: \n\tCategory: %s\n\tMessage: %s\n\tLocation: %s",
-                                finding.get("id"), finding.get("groupName"), finding.get("categoryName"),
-                                finding.get("message"), location.getOrDefault("uniformPath", "<undefined>"));
-                ProblemCategory assessment = ProblemCategory.fromRatingString((String) finding.get("assessment"));
-                if (assessment == ProblemCategory.WARNING && !failOnYellowFindings) {
-                    continue;
-                }
-                evaluationResult.addViolation(assessment, message);
+
+        for (Finding finding : findingsToEvaluate) {
+            if (finding.assessment == ProblemCategory.WARNING && !failOnYellowFindings) {
+                continue;
             }
-        } catch (ClassCastException e) {
-            throw new BuildBreakerInternalException(
-                    "Could not parse JSON response:\n" + findingsJson + "\n\nPlease contact CQSE with an error report.",
-                    e);
+            evaluationResult.addViolation(finding.assessment, finding.toString());
         }
         return evaluationResult;
     }
-
 }
