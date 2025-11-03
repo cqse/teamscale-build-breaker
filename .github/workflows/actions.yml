@@ -100,23 +100,22 @@ jobs:
         with:
           name: target-linux
           path: target-linux
-
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4
         with:
           name: target-windows
           path: target-windows
-
       - name: Download JAR artifacts
         uses: actions/download-artifact@v4
         with:
           name: target-jar
           path: target-jar
-      - name: Package
-        run: |
-          (cd ./target-linux && zip ../teamscale-buildbreaker-linux.zip ./teamscale-buildbreaker)
-          (cd ./target-windows && zip ../teamscale-buildbreaker-windows.zip ./teamscale-buildbreaker.exe)
-          (cd ./target-jar && cp ./teamscale-buildbreaker-*-shaded.jar ../teamscale-buildbreaker.jar)
+      - name: Package Linux
+        run: cd ./target-linux && zip ../teamscale-buildbreaker-linux.zip ./teamscale-buildbreaker
+      - name: Package Windows
+        run: cd ./target-windows && zip ../teamscale-buildbreaker-windows.zip ./teamscale-buildbreaker.exe
+      - name: Package JAR
+        run: cd ./target-jar && cp ./teamscale-buildbreaker-*-shaded.jar ../teamscale-buildbreaker.jar
       - name: Upload Release Assets
         id: create_release
         uses: svenstaro/upload-release-action@v2
