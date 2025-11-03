@@ -110,6 +110,14 @@ jobs:
         with:
           name: target-jar
           path: target-jar
+      - name: Debug - List directory contents
+        run: |
+          echo "=== target-linux contents ==="
+          ls -la ./target-linux/
+          echo "=== target-windows contents ==="
+          ls -la ./target-windows/
+          echo "=== target-jar contents ==="
+          ls -la ./target-jar/
       - name: Package Linux
         run: cd ./target-linux && zip ../teamscale-buildbreaker-linux.zip ./teamscale-buildbreaker
       - name: Package Windows
