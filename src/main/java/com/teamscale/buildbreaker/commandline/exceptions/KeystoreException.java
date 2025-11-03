@@ -1,4 +1,4 @@
-package com.teamscale.buildbreaker.exceptions;
+package com.teamscale.buildbreaker.commandline.exceptions;
 
 public class KeystoreException extends BuildBreakerExceptionBase {
     public KeystoreException(String s) {

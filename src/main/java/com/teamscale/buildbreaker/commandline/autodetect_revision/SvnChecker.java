@@ -1,4 +1,4 @@
-package com.teamscale.buildbreaker.autodetect_revision;
+package com.teamscale.buildbreaker.commandline.autodetect_revision;
 
 public class SvnChecker {
 

@@ -1,4 +1,4 @@
-package com.teamscale.buildbreaker.autodetect_revision;
+package com.teamscale.buildbreaker.commandline.autodetect_revision;
 
 import org.apache.commons.exec.CommandLine;
 import org.apache.commons.exec.DefaultExecutor;

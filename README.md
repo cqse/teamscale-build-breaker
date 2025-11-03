@@ -34,12 +34,11 @@ The IDE access key of the given user. Can be retrieved in Teamscale under Admin 
 **-b**, **--branch-and-timestamp**=*&lt;branch:timestamp&gt;*  
 The branch and Unix Epoch timestamp for which analysis results should be evaluated. This is typically the branch and
 commit timestamp of the commit that the current CI pipeline is building. The timestamp must be milliseconds since 00:00:
-00 UTC Thursday, 1 January 1970 or the string
-*HEAD* to evaluate thresholds on the latest revision on that branch.
+00 UTC Thursday, 1 January 1970.
 
 Format: BRANCH:TIMESTAMP
 
-Examples: master:1597845930000 or develop:HEAD
+Example: master:1597845930000
 
 **-c**, **--commit**=*&lt;commit-revision&gt;*  
 The version control commit revision for which analysis results should be obtained. This is typically the commit that the
@@ -49,10 +48,34 @@ current CI pipeline is building. Can be either a Git SHA1, a SVN revision number
 If this option is set, findings introduced with the given commit will be evaluated.
 
 **--fail-on-modified-code-findings**  
-Whether to on findings in modified code (not just new findings).
+Whether to fail on findings in modified code (not just new findings).
 
 **--fail-on-yellow-findings**  
 Whether to fail on yellow findings (with exit code 2).
+
+**--target-revision**=*&lt;revision-hash&gt;*  
+The revision (hash) to compare with using Teamscale's branch merge delta service. If specified, findings will be
+evaluated based on what would happen if the current commit (or the one specified via --commit) would be merged into this
+commit. This will
+take precedence over --target-branch-and-timestamp.
+
+**--target-branch-and-timestamp**=*&lt;branch:timestamp&gt;*  
+The branch and timestamp to compare with using Teamscale's branch merge delta service. If specified, findings will be
+evaluated based on what would happen if the current commit (or the one specified via --commit) would be merged into this
+commit.
+--target-revision will take precedence over this option if provided.
+
+**--base-revision**=*&lt;revision-hash&gt;*  
+The base revision (hash) to compare with using Teamscale's linear delta service. The commit needs to be a parent of the
+current commit (or the one specified via --commit). If specified, findings of all commits in between the two will be
+evaluated. This will take
+precedence over --base-branch-and-timestamp.
+
+**--base-branch-and-timestamp**=*&lt;branch:timestamp&gt;*  
+The base branch and timestamp to compare with using Teamscale's linear delta service. The commit needs to be a parent of
+the current commit (or the one specified via --commit). If specified, findings of all commits in between the two will be
+evaluated.
+--base-revision will take precedence over this option if provided.
 
 **--fail-on-yellow-metrics**  
 Whether to fail on yellow metrics (with exit code 2).
@@ -115,7 +138,7 @@ To use this tool in a Jenkins pipeline, complete the following steps:
 
        pipeline {
           agent any
-          
+
           stages {
               stage ('Teamscale Analysis') {
                   steps {

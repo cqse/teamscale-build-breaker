@@ -1,4 +1,4 @@
-package com.teamscale.buildbreaker.autodetect_revision;
+package com.teamscale.buildbreaker.commandline.autodetect_revision;
 
 public class GitChecker {
 
@@ -36,7 +36,7 @@ public class GitChecker {
                 result.stdoutAndStdErr);
         return null;
     }
- 
+
     private static boolean isInsideGit() {
         ProcessUtils.ProcessResult result = ProcessUtils.run("git", "rev-parse", "--is-inside-work-tree");
         return result.wasSuccessful() && result.stdoutAndStdErr.trim().equalsIgnoreCase("true");
