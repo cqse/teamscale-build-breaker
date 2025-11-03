@@ -95,10 +95,23 @@ jobs:
     name: Create Release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
         with:
-          pattern: target-*
-          merge-multiple: false
+          name: target-linux
+          path: target-linux
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: target-windows
+          path: target-windows
+
+      - name: Download JAR artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: target-jar
+          path: target-jar
       - name: Package
         run: |
           (cd ./target-linux && zip ../teamscale-buildbreaker-linux.zip ./teamscale-buildbreaker)
