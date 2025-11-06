@@ -311,12 +311,15 @@ public class TeamscaleClient implements AutoCloseable {
             DocumentContext metricAssessments = JsonPath.parse(response);
             List<Map<String, Object>> metricViolations = metricAssessments.read("$..metrics.*");
             for (Map<String, Object> metricViolation : metricViolations) {
-                Map<String, String> metricThresholds = (Map<String, String>) metricViolation.get("metricThresholds");
-                String displayName = metricViolation.get("displayName").toString();
-                String yellowThreshold = metricThresholds.get("thresholdYellow");
-                String redThreshold = metricThresholds.get("thresholdRed");
-                String formattedTextValue = metricViolation.get("formattedTextValue").toString();
                 ProblemCategory rating = ProblemCategory.fromRatingString((String) metricViolation.get("rating"));
+                if(ProblemCategory.NO_PROBLEM.equals(rating)) {
+                    continue;
+                }
+                Map<String, Object> metricThresholds = (Map<String, Object>) metricViolation.get("metricThresholds");
+                String displayName = metricViolation.get("displayName").toString();
+                String yellowThreshold = metricThresholds.get("thresholdYellow") != null ? metricThresholds.get("thresholdYellow").toString() : "";
+                String redThreshold = metricThresholds.get("thresholdRed") != null ? metricThresholds.get("thresholdRed").toString() : "";
+                String formattedTextValue = metricViolation.get("formattedTextValue").toString();
                 result.add(new MetricViolation(displayName, yellowThreshold, redThreshold, formattedTextValue, rating));
             }
             return result;
