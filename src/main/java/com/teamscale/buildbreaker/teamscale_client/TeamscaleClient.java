@@ -27,12 +27,7 @@ import org.conqat.lib.commons.collections.Pair;
 import org.conqat.lib.commons.string.StringUtils;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -361,6 +356,8 @@ public class TeamscaleClient implements AutoCloseable {
                         assessment.add(ETrafficLightColor.values()[i], mapping[i]);
                     }
                     formattedTextValue = assessment.toFormattedColorDistributionString();
+                } else if ("NUMERIC".equals(schemaEntry.get("valueType"))) {
+                    formattedTextValue = String.format(Locale.ENGLISH, "%.4f", metricViolation.get("value"));
                 } else {
                     formattedTextValue = metricViolation.get("value").toString();
                 }
