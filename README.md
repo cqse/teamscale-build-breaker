@@ -44,6 +44,9 @@ Example: master:1597845930000
 The version control commit revision for which analysis results should be obtained. This is typically the commit that the
 current CI pipeline is building. Can be either a Git SHA1, a SVN revision number or a Team Foundation changeset ID.
 
+**--uniform-path**
+Set this option to filter the location of findings and metric assessments.
+
 **-f**, **--evaluate-findings**  
 If this option is set, findings introduced with the given commit will be evaluated.
 

@@ -2,7 +2,7 @@ package com.teamscale.buildbreaker.evaluation;
 
 /** The categories in which problems are divided. */
 public enum ProblemCategory {
-    WARNING, ERROR;
+    WARNING, ERROR, NO_PROBLEM;
 
     public static ProblemCategory fromRatingString(String rating) {
         switch (rating) {
@@ -10,7 +10,8 @@ public enum ProblemCategory {
                 return WARNING;
             case "RED":
                 return ERROR;
+            default:
+                return NO_PROBLEM;
         }
-        throw new IllegalArgumentException("Unexpected rating string " + rating);
     }
 }

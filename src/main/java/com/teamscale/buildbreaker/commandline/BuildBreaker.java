@@ -90,6 +90,11 @@ public class BuildBreaker implements Callable<Integer> {
             description = "The project ID or alias (NOT the project name!) relevant for the analysis.")
     private String project;
 
+    /** To get Metrics and Findings for a subpath of the project */
+    @Option(names = {"--uniform-path"}, defaultValue = "",
+            description = "Uniform path of requested file or directory.")
+    public String uniformPath;
+
     @ArgGroup(multiplicity = "1")
     private CommitOptions commitOptions;
 
@@ -192,17 +197,17 @@ public class BuildBreaker implements Callable<Integer> {
         Pair<List<Finding>, List<Finding>> findingAssessments;
         if (StringUtils.isEmpty(targetBranchAndTimestamp) && StringUtils.isEmpty(baseBranchAndTimestamp)) {
             System.out.println("Evaluating findings for the current commit...");
-            findingAssessments = teamscaleClient.fetchFindingsUsingCommitDetails(currentBranchAndTimestamp);
+            findingAssessments = teamscaleClient.fetchFindingsUsingCommitDetails(currentBranchAndTimestamp, uniformPath);
         } else if (!StringUtils.isEmpty(targetBranchAndTimestamp)) {
             waitForAnalysisToFinish(targetBranchAndTimestamp);
             System.out.println("Evaluating findings by comparing the current commit with target commit '" +
                     targetBranchAndTimestamp + "'...");
-            findingAssessments = teamscaleClient.fetchFindingsUsingBranchMergeDelta(currentBranchAndTimestamp, targetBranchAndTimestamp);
+            findingAssessments = teamscaleClient.fetchFindingsUsingBranchMergeDelta(currentBranchAndTimestamp, targetBranchAndTimestamp, uniformPath);
         } else {
             waitForAnalysisToFinish(baseBranchAndTimestamp);
             System.out.println("Evaluating findings by aggregating the findings from the base commit '" +
                     baseBranchAndTimestamp + "' up to the current commit '" + currentBranchAndTimestamp + "' ...");
-            findingAssessments = teamscaleClient.fetchFindingsUsingLinearDelta(baseBranchAndTimestamp, currentBranchAndTimestamp);
+            findingAssessments = teamscaleClient.fetchFindingsUsingLinearDelta(baseBranchAndTimestamp, currentBranchAndTimestamp, uniformPath);
         }
 
         EvaluationResult findingsResult = new FindingsEvaluator()
@@ -249,7 +254,7 @@ public class BuildBreaker implements Callable<Integer> {
     private EvaluationResult evaluateMetrics() throws IOException, HttpRedirectException, HttpStatusCodeException, TooManyCommitsException, CommitCouldNotBeResolvedException, ParserException {
         System.out.println("Evaluating thresholds...");
         String currentBranchAndTimestamp = determineBranchAndTimestamp();
-        List<MetricViolation> metricAssessments = teamscaleClient.fetchMetricAssessments(currentBranchAndTimestamp, thresholdEvalOptions.thresholdConfig);
+        List<MetricViolation> metricAssessments = teamscaleClient.fetchMetricAssessments(currentBranchAndTimestamp, thresholdEvalOptions.thresholdConfig, uniformPath);
         EvaluationResult metricResult =
                 new MetricsEvaluator().evaluate(metricAssessments, thresholdEvalOptions.failOnYellowMetrics);
         System.out.println(metricResult);

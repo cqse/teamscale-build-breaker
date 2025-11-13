@@ -18,6 +18,10 @@ public class MetricViolation {
     @Override
     public String toString() {
         return String.format("%s: \n\tThresholds (yellow/red): %s/%s\n\tActual value: %s",
-                displayName, yellowThreshold, redThreshold, formattedTextValue);
+                displayName,
+                yellowThreshold.isEmpty() ? "-" : yellowThreshold,
+                redThreshold.isEmpty() ? "-" : redThreshold,
+                formattedTextValue
+        );
     }
 }
