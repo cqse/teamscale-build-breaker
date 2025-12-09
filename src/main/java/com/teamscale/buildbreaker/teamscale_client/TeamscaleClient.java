@@ -21,6 +21,8 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
+import org.conqat.lib.commons.assessment.Assessment;
+import org.conqat.lib.commons.assessment.ETrafficLightColor;
 import org.conqat.lib.commons.collections.Pair;
 import org.conqat.lib.commons.string.StringUtils;
 
@@ -145,6 +147,11 @@ public class TeamscaleClient implements AutoCloseable {
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String response = sendRequest(request);
+        if(response.contains("formattedTextValue")) {
+            // With TS v2024.9 the response scheme of this internal api endpoint has changed,
+            // removing the value "formattedTextValue". See TS-44526
+            return parseMetricResponsePreTS20249(response);
+        }
         return parseMetricResponse(response);
     }
 
@@ -298,18 +305,57 @@ public class TeamscaleClient implements AutoCloseable {
         }
     }
 
+    private List<MetricViolation> parseMetricResponsePreTS20249(String response) throws ParserException {
+        List<MetricViolation> result = new ArrayList<>();
+        try {
+            DocumentContext metricAssessments = JsonPath.parse(response);
+            List<Map<String, Object>> metricViolations = metricAssessments.read("$..metrics.*");
+            for (Map<String, Object> metricViolation : metricViolations) {
+                ProblemCategory rating = ProblemCategory.fromRatingString((String) metricViolation.get("rating"));
+                if(ProblemCategory.NO_PROBLEM.equals(rating)) {
+                    continue;
+                }
+                Map<String, Object> metricThresholds = (Map<String, Object>) metricViolation.get("metricThresholds");
+                String displayName = metricViolation.get("displayName").toString();
+                String yellowThreshold = metricThresholds.get("thresholdYellow") != null ? metricThresholds.get("thresholdYellow").toString() : "";
+                String redThreshold = metricThresholds.get("thresholdRed") != null ? metricThresholds.get("thresholdRed").toString() : "";
+                String formattedTextValue = metricViolation.get("formattedTextValue").toString();
+                result.add(new MetricViolation(displayName, yellowThreshold, redThreshold, formattedTextValue, rating));
+            }
+            return result;
+        } catch (ClassCastException | PathNotFoundException e) {
+            throw new ParserException("Could not parse metrics JSON response:\n" + response + "\n\nPlease contact CQSE with an error report.", e);
+        }
+    }
+
     private List<MetricViolation> parseMetricResponse(String response) throws ParserException {
         List<MetricViolation> result = new ArrayList<>();
         try {
             DocumentContext metricAssessments = JsonPath.parse(response);
             List<Map<String, Object>> metricViolations = metricAssessments.read("$..metrics.*");
             for (Map<String, Object> metricViolation : metricViolations) {
-                Map<String, String> metricThresholds = (Map<String, String>) metricViolation.get("metricThresholds");
-                String displayName = metricViolation.get("displayName").toString();
-                String yellowThreshold = metricThresholds.get("thresholdYellow");
-                String redThreshold = metricThresholds.get("thresholdRed");
-                String formattedTextValue = metricViolation.get("formattedTextValue").toString();
                 ProblemCategory rating = ProblemCategory.fromRatingString((String) metricViolation.get("rating"));
+                if(ProblemCategory.NO_PROBLEM.equals(rating)) {
+                    continue;
+                }
+                String displayName = metricViolation.get("displayName").toString();
+                Map<String, Object> metricThresholds = (Map<String, Object>) metricViolation.get("metricThresholds");
+                String yellowThreshold = metricThresholds.get("thresholdYellow") != null ? metricThresholds.get("thresholdYellow").toString() : "";
+                String redThreshold = metricThresholds.get("thresholdRed") != null ? metricThresholds.get("thresholdRed").toString() : "";
+                Map<String, String> schemaEntry = (Map<String, String>) metricViolation.get("schemaEntry");
+                String formattedTextValue;
+                if("ASSESSMENT".equals(schemaEntry.get("valueType"))) {
+                    Map<String, Object> value = (Map<String, Object>) metricViolation.get("value");
+                    List<Number> mappingList = (List<Number>) value.get("mapping");
+                    int[] mapping = mappingList.stream().mapToInt(Number::intValue).toArray();
+                    Assessment assessment = new Assessment();
+                    for (int i = 0; i < mapping.length; i++) {
+                        assessment.add(ETrafficLightColor.values()[i], mapping[i]);
+                    }
+                    formattedTextValue = assessment.toFormattedColorDistributionString();
+                } else {
+                    formattedTextValue = metricViolation.get("value").toString();
+                }
                 result.add(new MetricViolation(displayName, yellowThreshold, redThreshold, formattedTextValue, rating));
             }
             return result;
