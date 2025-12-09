@@ -27,12 +27,7 @@ import org.conqat.lib.commons.collections.Pair;
 import org.conqat.lib.commons.string.StringUtils;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -70,7 +65,7 @@ public class TeamscaleClient implements AutoCloseable {
      * @throws HttpStatusCodeException if an HTTP error code was returned by Teamscale
      * @throws ParserException         if there was an error parsing Teamscale's response
      */
-    public Pair<List<Finding>, List<Finding>> fetchFindingsUsingCommitDetails(String branchAndTimestamp) throws IOException, HttpRedirectException, HttpStatusCodeException, ParserException {
+    public Pair<List<Finding>, List<Finding>> fetchFindingsUsingCommitDetails(String branchAndTimestamp, String uniformPath) throws IOException, HttpRedirectException, HttpStatusCodeException, ParserException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder()
                         .addPathSegment("api")
@@ -82,7 +77,7 @@ public class TeamscaleClient implements AutoCloseable {
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String response = sendRequest(request);
-        return parseCommitFindingResponse(response);
+        return parseCommitFindingResponse(response, uniformPath);
     }
 
     /**
@@ -92,13 +87,13 @@ public class TeamscaleClient implements AutoCloseable {
      * @throws ParserException         if there was an error parsing Teamscale's response
      * @implNote The API we use here is not yet a public API (<a href="https://cqse.atlassian.net/browse/TS-44014">TS-44014</a>), so we don't use a versioned endpoint.
      */
-    public Pair<List<Finding>, List<Finding>> fetchFindingsUsingLinearDelta(String startBranchAndTimestamp, String endBranchAndTimestamp) throws IOException, HttpRedirectException, HttpStatusCodeException, ParserException {
+    public Pair<List<Finding>, List<Finding>> fetchFindingsUsingLinearDelta(String startBranchAndTimestamp, String endBranchAndTimestamp, String uniformPath) throws IOException, HttpRedirectException, HttpStatusCodeException, ParserException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder().addPathSegments("api/projects").addPathSegment(project)
                         .addPathSegments("findings/delta")
                         .addQueryParameter("t2", endBranchAndTimestamp)
                         .addQueryParameter("t1", startBranchAndTimestamp)
-                        .addQueryParameter("uniform-path", "");
+                        .addQueryParameter("uniform-path", uniformPath);
 
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
@@ -113,7 +108,7 @@ public class TeamscaleClient implements AutoCloseable {
      * @throws ParserException         if there was an error parsing Teamscale's response
      * @implNote The API we use here is not yet a public API (<a href="https://cqse.atlassian.net/browse/TS-44014">TS-44014</a>), so we don't use a versioned endpoint.
      */
-    public Pair<List<Finding>, List<Finding>> fetchFindingsUsingBranchMergeDelta(String sourceBranchAndTimestamp, String targetBranchAndTimestamp) throws IOException, HttpRedirectException, HttpStatusCodeException, ParserException {
+    public Pair<List<Finding>, List<Finding>> fetchFindingsUsingBranchMergeDelta(String sourceBranchAndTimestamp, String targetBranchAndTimestamp, String uniformPath) throws IOException, HttpRedirectException, HttpStatusCodeException, ParserException {
 
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder()
@@ -122,6 +117,9 @@ public class TeamscaleClient implements AutoCloseable {
                         .addPathSegments("merge-requests/finding-churn")
                         .addQueryParameter("source", sourceBranchAndTimestamp)
                         .addQueryParameter("target", targetBranchAndTimestamp);
+        if(!uniformPath.isEmpty()) {
+            builder.addQueryParameter("included-paths", uniformPath);
+        }
 
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
@@ -135,13 +133,13 @@ public class TeamscaleClient implements AutoCloseable {
      * @throws HttpStatusCodeException if an HTTP error code was returned by Teamscale
      * @throws ParserException         if there was an error parsing Teamscale's response
      */
-    public List<MetricViolation> fetchMetricAssessments(String branchAndTimestamp, String thresholdConfig) throws IOException, HttpRedirectException, HttpStatusCodeException, ParserException {
+    public List<MetricViolation> fetchMetricAssessments(String branchAndTimestamp, String thresholdConfig, String uniformPath) throws IOException, HttpRedirectException, HttpStatusCodeException, ParserException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder()
                         .addPathSegments("api/projects")
                         .addPathSegment(project)
                         .addPathSegment("metric-assessments")
-                        .addQueryParameter("uniform-path", "")
+                        .addQueryParameter("uniform-path", uniformPath)
                         .addQueryParameter("t", branchAndTimestamp)
                         .addQueryParameter("configuration-name", thresholdConfig);
         HttpUrl url = builder.build();
@@ -251,12 +249,17 @@ public class TeamscaleClient implements AutoCloseable {
         }
     }
 
-    private Pair<List<Finding>, List<Finding>> parseCommitFindingResponse(String response) throws ParserException {
+    private Pair<List<Finding>, List<Finding>> parseCommitFindingResponse(String response, String uniformPath) throws ParserException {
         try {
-            return tryParseFindingsResponse(response, "$.addedFindings.*", "$.findingsInChangedCode.*");
+            Pair<List<Finding>, List<Finding>> result = tryParseFindingsResponse(response, "$.addedFindings.*", "$.findingsInChangedCode.*");
+            return Pair.createPair(filterFindingLocations(result.getFirst(), uniformPath), filterFindingLocations(result.getSecond(), uniformPath));
         } catch (ParserException | PathNotFoundException e) {
             throw new ParserException("Could not parse findings JSON response:\n" + response + "\n\nPlease contact CQSE with an error report.", e);
         }
+    }
+
+    private List<Finding> filterFindingLocations(List<Finding> findings, String uniformPath) {
+        return findings.stream().filter(finding -> finding.uniformPath.startsWith(uniformPath)).collect(Collectors.toList());
     }
 
     /**
@@ -353,6 +356,8 @@ public class TeamscaleClient implements AutoCloseable {
                         assessment.add(ETrafficLightColor.values()[i], mapping[i]);
                     }
                     formattedTextValue = assessment.toFormattedColorDistributionString();
+                } else if ("NUMERIC".equals(schemaEntry.get("valueType"))) {
+                    formattedTextValue = String.format(Locale.ENGLISH, "%.4f", metricViolation.get("value"));
                 } else {
                     formattedTextValue = metricViolation.get("value").toString();
                 }
