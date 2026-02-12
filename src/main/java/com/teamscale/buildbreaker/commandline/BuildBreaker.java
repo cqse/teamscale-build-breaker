@@ -13,6 +13,7 @@ import com.teamscale.buildbreaker.evaluation.Finding;
 import com.teamscale.buildbreaker.evaluation.FindingsEvaluator;
 import com.teamscale.buildbreaker.evaluation.MetricViolation;
 import com.teamscale.buildbreaker.evaluation.MetricsEvaluator;
+import com.teamscale.buildbreaker.teamscale_client.AnalysisState;
 import com.teamscale.buildbreaker.teamscale_client.TeamscaleClient;
 import com.teamscale.buildbreaker.teamscale_client.exceptions.CommitCouldNotBeResolvedException;
 import com.teamscale.buildbreaker.teamscale_client.exceptions.HttpRedirectException;
@@ -39,6 +40,7 @@ import java.net.UnknownHostException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.chrono.ChronoLocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Objects;
@@ -176,7 +178,7 @@ public class BuildBreaker implements Callable<Integer> {
             fail("Could not resolve revision " + e.getRevision() +
                     " to a valid commit known to Teamscale (too many commits returned): " + e.getCommitDescriptorsJson());
         } catch (IOException e) {
-            fail("Encountered an error while communicating with Teamscale: ");
+            fail("Encountered an error while communicating with Teamscale: " + e.getMessage());
         } finally {
             // we must shut down OkHttp as otherwise it will leave threads running and
             // prevent JVM shutdown
@@ -281,34 +283,60 @@ public class BuildBreaker implements Callable<Integer> {
     }
 
     private void waitForAnalysisToFinish(String branchAndTimestampToWaitFor) throws IOException, InterruptedException, HttpRedirectException, HttpStatusCodeException {
+        String[] split = branchAndTimestampToWaitFor.split(":", 2);
+        String branch = split[0];
+        long requestedTimestamp = Long.parseLong(split[1]);
         LocalDateTime timeout = LocalDateTime.now().plus(waitForAnalysisTimeoutDuration);
-        boolean teamscaleAnalysisFinished = teamscaleClient.isTeamscaleAnalysisFinished(branchAndTimestampToWaitFor);
-        if (!teamscaleAnalysisFinished) {
+        AnalysisState analysisState = teamscaleClient.fetchAnalysisState(branch);
+        boolean analysisFinished = analysisState.timestamp >= requestedTimestamp;
+        if (!analysisFinished) {
             System.out.println(
                     "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Triggering Teamscale commit hook on repository.");
-            try {
-                teamscaleClient.triggerCommitHookEvent(remoteRepositoryUrl);
-                System.out.println("Commit hook triggered successfully.");
-            } catch (RepositoryNotFoundException e) {
-                System.out.println(
-                        "Failed to automatically detect the remote repository URL. Please specify it manually via --repository-url to enable sending a commit hook event to Teamscale.");
-            } catch (IOException e) {
-                System.out.println("Failure when trying to send the commit hook event to Teamscale: " + e);
-            }
-
-        }
-        while (!teamscaleAnalysisFinished && LocalDateTime.now().isBefore(timeout)) {
-            System.out.println(
-                    "The commit that should be evaluated has not yet been analyzed on the Teamscale instance. Will retry in ten seconds until the timeout is reached at " +
-                            DateTimeFormatter.RFC_1123_DATE_TIME.format(timeout.atZone(ZoneOffset.UTC)) +
+            triggerCommitHook();
+            System.out.println("Start querying the analysis state for '" + branchAndTimestampToWaitFor + "' every ten seconds until it has been analyzed or the timeout is reached at " +
+                    DateTimeFormatter.RFC_1123_DATE_TIME.format(timeout.atZone(ZoneOffset.UTC)) +
                             ". You can change this timeout using --wait-for-analysis-timeout.");
+            analysisState = waitForCommitBeingAnalyzed(analysisState, branch, requestedTimestamp, timeout);
+            analysisFinished = analysisState.timestamp >= requestedTimestamp;
+        }
+
+        if (!analysisFinished) {
+            String timeoutMessage = "The result for the commit with timestamp " + requestedTimestamp
+                    + " could not be retrieved because the last processed commit has the timestamp "
+                    + analysisState.timestamp + " and the analysis was in state " + analysisState.state + ".";
+            if (analysisState.rollbackId != null) {
+                timeoutMessage += " (rollback id: " + analysisState.rollbackId + ")";
+            }
+            throw new AnalysisNotFinishedException(timeoutMessage);
+        }
+    }
+
+    private void triggerCommitHook() throws HttpRedirectException, HttpStatusCodeException {
+        try {
+            teamscaleClient.triggerCommitHookEvent(remoteRepositoryUrl);
+            System.out.println("Commit hook triggered successfully.");
+        } catch (RepositoryNotFoundException e) {
+            System.out.println(
+                    "Failed to automatically detect the remote repository URL. Please specify it manually via --repository-url to enable sending a commit hook event to Teamscale.");
+        } catch (IOException e) {
+            System.out.println("Failure when trying to send the commit hook event to Teamscale: " + e);
+        }
+    }
+
+    private AnalysisState waitForCommitBeingAnalyzed(AnalysisState analysisState, String branch, long requestedTimestamp, ChronoLocalDateTime<?> timeout) throws InterruptedException, HttpRedirectException, HttpStatusCodeException, IOException {
+        boolean analysisFinished = false;
+        while (!analysisFinished && LocalDateTime.now().isBefore(timeout)) {
             Thread.sleep(Duration.ofSeconds(10).toMillis());
-            teamscaleAnalysisFinished = teamscaleClient.isTeamscaleAnalysisFinished(branchAndTimestampToWaitFor);
+            analysisState = teamscaleClient.fetchAnalysisState(branch);
+            analysisFinished = analysisState.timestamp >= requestedTimestamp;
+            String logMessage = "Current analysis state: state=" + analysisState.state
+                    + ", last processed timestamp=" + analysisState.timestamp;
+            if (analysisState.rollbackId != null) {
+                logMessage += ", rollback id=" + analysisState.rollbackId;
+            }
+            System.out.println(logMessage);
         }
-        if (!teamscaleAnalysisFinished) {
-            throw new AnalysisNotFinishedException(
-                    "The commit that should be evaluated was not analyzed by Teamscale in time before the analysis timeout.");
-        }
+        return analysisState;
     }
 
     private String determineBranchAndTimestamp() throws IOException, TooManyCommitsException, HttpRedirectException, HttpStatusCodeException, CommitCouldNotBeResolvedException {

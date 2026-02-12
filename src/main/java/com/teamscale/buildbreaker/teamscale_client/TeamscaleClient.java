@@ -217,19 +217,7 @@ public class TeamscaleClient implements AutoCloseable {
         sendRequest(request);
     }
 
-    /**
-     * @return whether the analysis has reached the given timestamp on the given branch already
-     * @throws HttpRedirectException   if a redirect is encountered
-     * @throws HttpStatusCodeException if an HTTP error code was returned by Teamscale
-     */
-    public boolean isTeamscaleAnalysisFinished(String branchAndTimestampToWaitFor) throws IOException, HttpRedirectException, HttpStatusCodeException {
-        String[] branchAndTimestamp = branchAndTimestampToWaitFor.split(":", 2);
-        String branch = branchAndTimestamp[0];
-        long timestamp = Long.parseLong(branchAndTimestamp[1]);
-        return isAnalysisFinished(branch, timestamp);
-    }
-
-    private boolean isAnalysisFinished(String branch, long timestamp) throws IOException, HttpRedirectException, HttpStatusCodeException {
+    public AnalysisState fetchAnalysisState(String branch) throws IOException, HttpRedirectException, HttpStatusCodeException {
         HttpUrl.Builder builder =
                 teamscaleServerUrl.newBuilder()
                         .addPathSegments("api/projects")
@@ -239,14 +227,21 @@ public class TeamscaleClient implements AutoCloseable {
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
         String analysisStateJson = sendRequest(request);
-        DocumentContext analysisState = JsonPath.parse(analysisStateJson);
+        DocumentContext context = JsonPath.parse(analysisStateJson);
+        long lastFinishedTimestamp;
         try {
-            Integer lastFinishedTimestamp = analysisState.read("$.timestamp");
-            return lastFinishedTimestamp >= timestamp;
+            lastFinishedTimestamp = context.<Integer>read("$.timestamp");
         } catch (ClassCastException e) {
-            Long lastFinishedTimestamp = analysisState.read("$.timestamp");
-            return lastFinishedTimestamp >= timestamp;
+            lastFinishedTimestamp = context.read("$.timestamp");
         }
+        String state = context.read("$.state");
+        String rollbackId = null;
+        try {
+            rollbackId = context.read("$.rollbackId");
+        } catch (PathNotFoundException e) {
+            // rollbackId is optional
+        }
+        return new AnalysisState(lastFinishedTimestamp, state, rollbackId);
     }
 
     private Pair<List<Finding>, List<Finding>> parseCommitFindingResponse(String response, String uniformPath) throws ParserException {
