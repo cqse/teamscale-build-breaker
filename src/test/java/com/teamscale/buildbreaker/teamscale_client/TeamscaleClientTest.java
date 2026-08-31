@@ -277,9 +277,21 @@ class TeamscaleClientTest {
 
             RecordedRequest request = server.takeRequest();
             assertThat(request.getPath()).contains("/api/projects/test-project/metric-assessments");
-            assertThat(request.getPath()).contains("t=main%3A123");
+            assertThat(request.getPath()).contains("t=main%3A123e");
             assertThat(request.getPath()).contains("configuration-name=default");
             assertThat(request.getPath()).contains("uniform-path=src%2F");
+        }
+
+        @Test
+        void appendsEndOfTimestampSuffixToIncludeLateExternalUploadsTS47322() throws Exception {
+            enqueueJsonResponse("[]");
+
+            client.fetchMetricAssessments("master:1597845930000", "config", "");
+
+            RecordedRequest request = server.takeRequest();
+            // The 'e' ("end of timestamp") suffix ensures data attached slightly after the exact
+            // commit timestamp (e.g. externally uploaded findings) is included in the assessment.
+            assertThat(request.getPath()).contains("t=master%3A1597845930000e");
         }
 
         @Test

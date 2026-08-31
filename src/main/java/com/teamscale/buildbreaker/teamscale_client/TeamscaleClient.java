@@ -140,7 +140,7 @@ public class TeamscaleClient implements AutoCloseable {
                         .addPathSegment(project)
                         .addPathSegment("metric-assessments")
                         .addQueryParameter("uniform-path", uniformPath)
-                        .addQueryParameter("t", branchAndTimestamp)
+                        .addQueryParameter("t", appendEndOfTimestampSuffix(branchAndTimestamp))
                         .addQueryParameter("configuration-name", thresholdConfig);
         HttpUrl url = builder.build();
         Request request = createAuthenticatedGetRequest(url);
@@ -362,6 +362,18 @@ public class TeamscaleClient implements AutoCloseable {
         } catch (ClassCastException | PathNotFoundException e) {
             throw new ParserException("Could not parse metrics JSON response:\n" + response + "\n\nPlease contact CQSE with an error report.", e);
         }
+    }
+
+    /**
+     * Appends Teamscale's {@code e} suffix to a {@code branch:timestamp} string so that the
+     * requested state includes data attached to the commit slightly after the exact commit timestamp
+     * (e.g. externally uploaded findings). If the suffix is already present, the value is returned unchanged.
+     */
+    private static String appendEndOfTimestampSuffix(String branchAndTimestamp) {
+        if (branchAndTimestamp.endsWith("e")) {
+            return branchAndTimestamp;
+        }
+        return branchAndTimestamp + "e";
     }
 
     private String extractTimestamp(String commitDescriptorsJson) {
